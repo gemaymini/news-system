@@ -1,8 +1,8 @@
-const mysql=require('mysql')
+const mysql=require('mysql2')
 const db = mysql.createConnection({
     host: '127.0.0.1',
     user: 'root',
-    password: '040522',
-    database: 'mydb',
+    password: 'Zrt040522',
+    database: 'news_system',
   })
   module.exports = db

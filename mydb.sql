@@ -316,11 +316,11 @@ INSERT INTO `news_sorts` VALUES (8, '其他', 'black', 1);
 -- ----------------------------
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles`  (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `id` int(11) NOT NULL PEIMARY KEY AUTO_INCREMENT,
   `name` varchar(45) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL,
   `key` varchar(45) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL,
   `module_id` int(11) NOT NULL,
-  PRIMARY KEY (`id`, `module_id`) USING BTREE,
+  -- PRIMARY KEY (`id`, `module_id`) USING BTREE,
   UNIQUE INDEX `key_UNIQUE`(`key` ASC) USING BTREE,
   INDEX `fk_role_module1_idx`(`module_id` ASC) USING BTREE,
   CONSTRAINT `fk_role_module1` FOREIGN KEY (`module_id`) REFERENCES `module` (`id`) ON DELETE RESTRICT ON UPDATE RESTRICT
