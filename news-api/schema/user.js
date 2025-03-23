@@ -39,7 +39,7 @@ exports.updateuser_schema={
     body:{
         id,
         character_id,
-        password
+        // password
     }
 }
 

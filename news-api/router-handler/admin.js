@@ -93,7 +93,7 @@ exports.updateUserInfo=(req,res)=>{
 // 上传图片
 exports.uploadImage=(req,res)=>{
     const updateImgSQL='update user set image_url=? where id=?'
-    let image_url="http://localhost:8080"+'\/uploads\/'+req.file.filename
+    let image_url="http://10.126.84.173:8080"+'\/uploads\/'+req.file.filename
     db.query(updateImgSQL,[image_url,req.auth.id],(err,results)=>{
         if(err)return res.ok(err)
         res.ok('上传成功！',{
