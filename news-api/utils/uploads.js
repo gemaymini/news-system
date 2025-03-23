@@ -1,32 +1,36 @@
-const multer = require('multer') 
-const path = require('path')
-const stringRandom =require('string-random') //生成随机字符串，防止图片被随意获取
+const multer = require('multer');
+const path = require('path');
+const stringRandom = require('string-random');  // 生成随机字符串
 
-// 过滤文件
-function fileFilter (req, file, cb) {
-    let extname = path.extname(file.originalname) 
-    let allow='.jpge|.png|.jpg'
-    if(allow.includes(extname)){
-        cb(null, true)  //表示通过
-    }else{
-        cb(new Error('仅支持'+allow+'文件格式'))
+// 存储引擎配置
+const storage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        // 确保保存到正确的路径
+        const uploadPath = path.join(__dirname, '../uploads');
+        cb(null, uploadPath);  // 上传路径
+    },
+    filename: function (req, file, cb) {
+        // 使用随机字符串防止文件名冲突
+        const extname = path.extname(file.originalname);
+        const filename = stringRandom(24, { numbers: true }) + extname;
+        cb(null, filename);  // 文件名
+    }
+});
+
+// 文件过滤器，确保上传的文件格式正确
+function fileFilter(req, file, cb) {
+    const extname = path.extname(file.originalname);
+    const allow = '.jpeg|.png|.jpg';
+    if (allow.includes(extname)) {
+        cb(null, true);  // 文件格式合法，允许上传
+    } else {
+        cb(new Error('仅支持 .jpeg, .png, .jpg 格式的文件'));  // 不支持的格式
     }
 }
 
-// 存储引擎
-const storage = multer.diskStorage({
-    destination: function (req, file, cb) {
-        cb(null, path.join(__dirname, '../uploads'))
-    },
-    // 文件名称
-    filename: function (req, file, cb) {
-        let extname = path.extname(file.originalname)  
-        cb(null, stringRandom(24, { numbers: true })+ extname)
-    }
-})
+const upload = multer({
+    storage: storage,
+    fileFilter: fileFilter
+});
 
-const upload = multer({ 
-    storage,
-    fileFilter
- })
- module.exports=upload
+module.exports = upload;

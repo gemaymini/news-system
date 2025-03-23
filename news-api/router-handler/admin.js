@@ -91,14 +91,22 @@ exports.updateUserInfo=(req,res)=>{
 }
 
 // 上传图片
-exports.uploadImage=(req,res)=>{
-    const updateImgSQL='update user set image_url=? where id=?'
-    let image_url="http://10.126.84.173:8080"+'\/uploads\/'+req.file.filename
-    db.query(updateImgSQL,[image_url,req.auth.id],(err,results)=>{
-        if(err)return res.ok(err)
-        res.ok('上传成功！',{
+exports.uploadImage = (req, res) => {
+    // 检查是否上传了文件
+    if (!req.file) {
+        return res.err('没有上传文件');
+    }
+
+    const updateImgSQL = 'UPDATE user SET image_url = ? WHERE id = ?';
+    let image_url = "http://10.126.84.173:8080" + '/uploads/' + req.file.filename;
+
+    db.query(updateImgSQL, [image_url, req.auth.id], (err, results) => {
+        if (err) {
+            console.error('数据库更新失败:', err);
+            return res.err('头像更新失败');
+        }
+        res.ok('上传成功！', {
             image_url
-        })
-    })
-    
-}
+        });
+    });
+};
