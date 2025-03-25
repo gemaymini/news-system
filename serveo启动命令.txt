@@ -1,1 +1,6 @@
 ssh -R news:80:localhost:8080 serveo.net
+
+涉及IP的位置
+
+TopHeader.js
+.env.development
