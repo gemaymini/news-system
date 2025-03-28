@@ -316,7 +316,7 @@ INSERT INTO `news_sorts` VALUES (8, '其他', 'black', 1);
 -- ----------------------------
 DROP TABLE IF EXISTS `roles`;
 CREATE TABLE `roles`  (
-  `id` int(11) NOT NULL PEIMARY KEY AUTO_INCREMENT,
+  `id` int(11) NOT NULL PRIMARY KEY AUTO_INCREMENT,
   `name` varchar(45) CHARACTER SET utf8 COLLATE utf8_general_ci NULL DEFAULT NULL,
   `key` varchar(45) CHARACTER SET utf8 COLLATE utf8_general_ci NOT NULL,
   `module_id` int(11) NOT NULL,
