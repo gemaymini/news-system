@@ -43,7 +43,7 @@ export default observer(() => {
   // 上传图片
   const props = {
     name: 'image',
-    action: 'http://10.126.84.173:8080/upload/uploadimage',
+    action: 'http://10.126.95.2:8080/upload/uploadimage',
     headers: { 'Authorization': 'Bearer ' + AdminStore.token },
     onChange(info) {
       if (info.file.status === 'done') {

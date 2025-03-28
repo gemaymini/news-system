@@ -156,7 +156,7 @@ export default observer((props)=> {
                                 <Input/>
                             </Form.Item>
                             <Form.Item label="角色描述" name="description">
-                                <Input/>
+                                 <Input/>
                             </Form.Item>
                         </Form>
                     )

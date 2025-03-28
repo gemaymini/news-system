@@ -98,7 +98,7 @@ exports.uploadImage = (req, res) => {
     }
 
     const updateImgSQL = 'UPDATE user SET image_url = ? WHERE id = ?';
-    let image_url = "http://10.126.84.173:8080" + '/uploads/' + req.file.filename;
+    let image_url = "http://10.126.95.2:8080" + '/uploads/' + req.file.filename;
 
     db.query(updateImgSQL, [image_url, req.auth.id], (err, results) => {
         if (err) {
