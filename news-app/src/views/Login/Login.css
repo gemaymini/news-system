@@ -1,0 +1,236 @@
+/* CSS Variables for Maintainability */
+:root {
+    --primary-color: #3498db;
+    --primary-hover: #2980b9;
+    --shadow-color: rgba(0, 0, 0, 0.15);
+    --footer-bg: #34495e;
+    --text-muted: #7f8c8d;
+}
+
+/* Overall Layout */
+.login-layout {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    overflow: hidden;
+}
+
+.login-layout::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    opacity: 0.1;
+    z-index: 0;
+}
+
+/* Header */
+/* .login-header {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    transition: box-shadow 0.3s ease;
+} */
+.login-header {
+    display: flex;
+    align-items: center;
+    padding: 0 10px;
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    transition: box-shadow 0.3s ease;
+}
+
+.login-header:hover {
+    box-shadow: 0 4px 12px var(--shadow-color);
+}
+
+.logo {
+    display: flex;
+    align-items: center;
+}
+
+/* Content */
+.login-content {
+    flex: 1;
+    background: url('images1.jpg') no-repeat center center/cover; /* Background image */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+    position: relative;
+    z-index: 1;
+}
+
+.welcome-section {
+    text-align: center;
+    margin-bottom: 30px;
+    animation: fadeIn 1s ease-in;
+}
+
+.welcome-title {
+    color: #333;
+}
+
+.welcome-text {
+    color: #666;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Login Card */
+.login-card {
+    width: 100%;
+    max-width: 400px;
+    border: 2px solid #ccc;
+    border-radius: 20px;
+    box-shadow: 0 8px 24px var(--shadow-color);
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    background: #fff;
+}
+
+.login-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 12px 32px var(--shadow-color);
+}
+
+.login-title {
+    text-align: center;
+    background: transparent;
+    color: var(--primary-color);
+    transition: border-color 0.3s ease, color 0.3s ease;
+}
+
+.login-title:hover {
+    border-color: var(--primary-hover);
+    color: var(--primary-hover);
+}
+
+/* Form */
+.login-form {
+    padding: 0 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.centered-input {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 8px;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+.centered-input:focus {
+    border-color: var(--primary-color);
+    box-shadow: 0 0 8px rgba(52, 152, 219, 0.3);
+}
+
+/* Button */
+.login-button {
+    width: 100%;
+    max-width: 300px;
+    border-radius: 8px;
+    border: 2px solid var(--primary-color);
+    background: transparent;
+    color: var(--primary-color);
+    transition: all 0.3s ease;
+}
+
+.login-button:hover {
+    border-color: var(--primary-hover);
+    color: var(--primary-hover);
+    background: rgba(52, 152, 219, 0.1);
+    transform: scale(1.05);
+}
+
+/* Footer Links */
+.login-footer {
+    text-align: center;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 16px;
+    border: 1px solid var(--text-muted);
+    border-radius: 8px;
+    background: transparent;
+    transition: border-color 0.3s ease;
+}
+
+.login-footer:hover {
+    border-color: #95a5a6;
+}
+
+.footer-text {
+    color: var(--text-muted);
+    margin-right: 8px;
+}
+
+.register-link {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    padding: 0;
+    transition: color 0.3s ease;
+}
+
+.register-link:hover {
+    color: #95a5a6;
+}
+
+/* Sidebar Decor */
+.sidebar-decor {
+    position: absolute;
+    left: 50px;
+    top: 50%;
+    transform: translateY(-50%);
+    text-align: center;
+    opacity: 0.7;
+    display: none;
+}
+
+/* Page Footer */
+.login-footer {
+    text-align: center;
+    padding: 10px 0;
+    background: var(--footer-bg);
+    color: #fff;
+    z-index: 1;
+}
+
+.login-footer a {
+    color: #34495e;
+    margin: 0 10px;
+    transition: color 0.3s ease;
+}
+
+.login-footer a:hover {
+    color: #ddd;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .login-card {
+        max-width: 100%;
+        margin: 0 10px;
+    }
+    .sidebar-decor {
+        display: none;
+    }
+    .welcome-section {
+        margin-bottom: 20px;
+    }
+    .login-content {
+        padding: 10px;
+    }
+}
