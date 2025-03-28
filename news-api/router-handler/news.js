@@ -209,7 +209,7 @@ exports.deleteDraft=(req,res)=>{
 
 // 获取新闻详情
 exports.getNewsDetail=async(req,res)=>{
-    const rows=await query(`select id,visits,likes,title,content,create_time,sort_id,check_state,publish_state,star,view,comment,author_name from news_detail where id=${req.query.id}`,res)
+    const rows=await query(`select id,visits,likes,title,content,create_time,sort_id,check_state,publish_state,author_name from news_detail where id=${req.query.id}`,res)
     res.ok('ok',{
         data:rows[0]
     })
