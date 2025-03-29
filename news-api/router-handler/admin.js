@@ -90,26 +90,66 @@ exports.updateUserInfo=(req,res)=>{
     })
 }
 
-// // 上传图片
+// const fs = require('fs');
+// const path = require('path');
+
 // exports.uploadImage = (req, res) => {
 //     // 检查是否上传了文件
 //     if (!req.file) {
 //         return res.err('没有上传文件');
 //     }
 
+//     const selectImgSQL = 'SELECT image_url FROM user WHERE id = ?';
 //     const updateImgSQL = 'UPDATE user SET image_url = ? WHERE id = ?';
-//     let image_url = "http://10.126.95.2:8080" + '/uploads/' + req.file.filename;
+//     const newImageUrl = "http://10.126.95.2:8080" + '/uploads/' + req.file.filename;
 
-//     db.query(updateImgSQL, [image_url, req.auth.id], (err, results) => {
+//     // 查询当前头像路径
+//     db.query(selectImgSQL, [req.auth.id], (err, results) => {
 //         if (err) {
-//             console.error('数据库更新失败:', err);
-//             return res.err('头像更新失败');
+//             console.error('查询当前头像路径失败:', err);
+//             return res.err('查询当前头像路径失败');
 //         }
-//         res.ok('上传成功！', {
-//             image_url
-//         });
+
+//         if (results.length > 0) {
+//             const oldImageUrl = results[0].image_url;
+//             console.log('oldImageUrl:', oldImageUrl);
+//             const defaultImageUrl=
+
+//             const oldImagePath = path.join(__dirname, '../uploads/', path.basename(oldImageUrl));
+            
+//             // 删除旧头像文件
+//             fs.unlink(oldImagePath, (err) => {
+//                 if (err) {
+//                     console.error('删除旧头像文件失败:', err);
+//                     return res.err('删除旧头像文件失败');
+//                 }
+
+//                 // 更新数据库中的头像路径
+//                 db.query(updateImgSQL, [newImageUrl, req.auth.id], (err, results) => {
+//                     if (err) {
+//                         console.error('数据库更新失败:', err);
+//                         return res.err('头像更新失败');
+//                     }
+//                     res.ok('上传成功！', {
+//                         image_url: newImageUrl
+//                     });
+//                 });
+//             });
+//         } else {
+//             // 如果没有找到当前头像，直接更新数据库
+//             db.query(updateImgSQL, [newImageUrl, req.auth.id], (err, results) => {
+//                 if (err) {
+//                     console.error('数据库更新失败:', err);
+//                     return res.err('头像更新失败');
+//                 }
+//                 res.ok('上传成功！', {
+//                     image_url: newImageUrl
+//                 });
+//             });
+//         }
 //     });
 // };
+
 
 const fs = require('fs');
 const path = require('path');
@@ -133,16 +173,32 @@ exports.uploadImage = (req, res) => {
 
         if (results.length > 0) {
             const oldImageUrl = results[0].image_url;
-            const oldImagePath = path.join(__dirname, '../uploads/', path.basename(oldImageUrl));
+            const defaultImageUrl = "http://10.126.95.2:8080/uploads/default_image.jpeg";
 
-            // 删除旧头像文件
-            fs.unlink(oldImagePath, (err) => {
-                if (err) {
-                    console.error('删除旧头像文件失败:', err);
-                    return res.err('删除旧头像文件失败');
-                }
+            // 如果旧头像不是默认头像，则删除旧头像文件
+            if (oldImageUrl !== defaultImageUrl) {
+                const oldImagePath = path.join(__dirname, '../uploads/', path.basename(oldImageUrl));
+                
+                // console.log('oldImagePath:', oldImagePath);
+                fs.unlink(oldImagePath, (err) => {
+                    if (err) {
+                        console.error('删除旧头像文件失败:', err);
+                        return res.err('删除旧头像文件失败');
+                    }
 
-                // 更新数据库中的头像路径
+                    // 更新数据库中的头像路径
+                    db.query(updateImgSQL, [newImageUrl, req.auth.id], (err, results) => {
+                        if (err) {
+                            console.error('数据库更新失败:', err);
+                            return res.err('头像更新失败');
+                        }
+                        res.ok('上传成功！', {
+                            image_url: newImageUrl
+                        });
+                    });
+                });
+            } else {
+                // 如果旧头像是默认头像，直接更新数据库中的头像路径
                 db.query(updateImgSQL, [newImageUrl, req.auth.id], (err, results) => {
                     if (err) {
                         console.error('数据库更新失败:', err);
@@ -152,7 +208,7 @@ exports.uploadImage = (req, res) => {
                         image_url: newImageUrl
                     });
                 });
-            });
+            }
         } else {
             // 如果没有找到当前头像，直接更新数据库
             db.query(updateImgSQL, [newImageUrl, req.auth.id], (err, results) => {
