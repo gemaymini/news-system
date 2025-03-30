@@ -208,12 +208,25 @@ exports.deleteDraft=(req,res)=>{
 
 
 // 获取新闻详情
-exports.getNewsDetail=async(req,res)=>{
-    const rows=await query(`select id,visits,likes,title,content,create_time,sort_id,check_state,publish_state,author_name from news_detail where id=${req.query.id}`,res)
-    res.ok('ok',{
-        data:rows[0]
-    })
-}
+// 在你的后端文件中
+exports.getNewsDetail = (req, res) => {
+    const getNewsSQL = `
+        SELECT 
+            n.*,
+            u.id AS author_id, 
+            u.username AS author_name
+        FROM news_detail n
+        LEFT JOIN user u ON n.author_name = u.username
+        WHERE n.id = ?
+    `;
+    db.query(getNewsSQL, [req.query.id], (err, results) => {
+        if (err) return res.err(err);
+        if (results.length === 0) {
+            return res.status(404).json({ status: 404, message: '新闻不存在' });
+        }
+        res.ok('ok', { data: results[0] });
+    });
+};
 
 
 // 获取审核列表--用户版
