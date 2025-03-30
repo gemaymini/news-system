@@ -33,7 +33,12 @@ const UserStore=observable({
     setUserInfo(string){
         this.userInfo=string
     },
-    
+
+// 假设这是在 UserStore 类/对象中的
+    setPageSize(size) {
+        this.pageSize = size;
+        this.requireUserList(); // 更新 pageSize 后重新获取用户列表
+    },
 
     async requireCharacters(){
         const res=await getCharactersOptions()

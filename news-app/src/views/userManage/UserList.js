@@ -152,7 +152,8 @@ export default observer(()=>{
                     pageSize:UserStore.pageSize,
                     current:UserStore.currentPage,
                     total:UserStore.total,
-                    onChange:(value)=>{UserStore.setCurrentPage(value)}
+                    onChange:(value)=>{UserStore.setCurrentPage(value)},
+                    onShowSizeChange: (current, size) => { UserStore.setPageSize(size) } // 添加此行
                 }}/>
         
         </div>
