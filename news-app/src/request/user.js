@@ -33,7 +33,10 @@ export async function updateUser(data){
     return $axios.post('/api/updateuser',data)
 }
 
-
+// 获取用户简介信息（新增）
+export async function getUserInfo(id) {
+    return $axios.get(`/api/getuserinfo/${id}`);
+}
 
 
 

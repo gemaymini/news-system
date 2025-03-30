@@ -80,3 +80,49 @@ exports.aliveUser=(req,res)=>{
         res.ok('恢复成功')
     })
 }
+
+exports.getUserInfo = (req, res) => {
+    const userId = req.params.id;
+
+    // 查询用户信息
+    const getUserSQL = 'SELECT username FROM user WHERE id = ? AND state = 1';
+
+    // 查询新闻发布量、点赞量和访问量
+    const getNewsStatsSQL = `
+        SELECT 
+            COUNT(*) as newsCount, 
+            COALESCE(SUM(likes), 0) as likesCount, 
+            COALESCE(SUM(visits), 0) as viewsCount 
+        FROM news_detail 
+        WHERE author_name = (SELECT username FROM user WHERE id = ? AND state = 1) and publish_state = 3
+    `;
+
+    // 执行用户信息查询
+    db.query(getUserSQL, [userId], (err, userResult) => {
+        if (err) {
+            return res.status(500).json({ status: 500, message: '数据库错误', error: err });
+        }
+        if (userResult.length === 0) {
+            return res.status(404).json({ status: 404, message: '用户不存在或已被删除' });
+        }
+
+        const username = userResult[0].username;
+
+        // 执行新闻统计查询
+        db.query(getNewsStatsSQL, [userId], (err, statsResult) => {
+            if (err) {
+                return res.status(500).json({ status: 500, message: '数据库错误', error: err });
+            }
+
+            const userInfo = {
+                username: username,
+                name: username, // 数据库无 name 字段，使用 username 代替
+                newsCount: statsResult[0].newsCount || 0,
+                likesCount: statsResult[0].likesCount || 0,
+                viewsCount: statsResult[0].viewsCount || 0
+            };
+
+            res.status(200).json({ status: 200, message: 'OK', data: userInfo });
+        });
+    });
+};

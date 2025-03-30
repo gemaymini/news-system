@@ -11,6 +11,6 @@ router.post('/updateuser',expressJoi(updateuser_schema),userHandler.updateUser)
 router.get('/deleteuser',userHandler.deleteUser)
 router.get('/stopuser',userHandler.stopUser)
 router.get('/aliveuser',userHandler.aliveUser)
-
+router.get('/getuserinfo/:id', userHandler.getUserInfo);
 
 module.exports=router
