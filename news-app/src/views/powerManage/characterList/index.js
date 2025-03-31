@@ -101,7 +101,7 @@ export default observer(()=> {
             title: '状态',
             dataIndex: 'state',
             align:'center',
-            render: (text,record) => AdminStore.modules.operations.includes('characterUpdate')?
+            render: (text,record) => AdminStore.modules.operations.includes('characterState')?
                     <Switch 
                         disabled={record.id===1||record.id===6} 
                         checkedChildren="正常"
