@@ -9,6 +9,8 @@ import {
     stopOrStartNewsSort
 } from '../../request/news'
 import ModalComponent from './ModalComponent.js';
+
+
 export default observer(()=> {
     const {NewsStore}=useStores()
 
@@ -86,8 +88,9 @@ export default observer(()=> {
             title: '状态',
             dataIndex: 'state',
             align:'center',
-            render: (text,record) =>
-                    <div>
+            render: (text,record) =>{
+                 if(AdminStore.modules.operations.includes('sortAddUpdate')){
+                    return <div>
                     <Switch 
                         disabled={record.id===8} 
                         checkedChildren="正常"
@@ -97,15 +100,31 @@ export default observer(()=> {
                     />
                     {/* <span>{record.state?<span>正常</span>:<span style={{color:'red'}}>已停用</span>}</span> */}
                     </div>
+                    }
+                    else{
+                        return <div>{record.state?<span>正常</span>:<span style={{color:'red'}}>已停用</span>}</div>
+                    }
+                    }
         },
         {
             title: '操作',
             dataIndex: 'state',
             align:'center',
             render: (text,record) => {
-                            return <div><Button danger size='small' icon={<DeleteFilled />} style={{marginRight:"1em"}} onClick={()=>{deleteRow(record.id)}}>删除</Button>
-                            <Button type='primary' size='small' icon={<EditOutlined />} onClick={()=>{editRow(record)}}>编辑</Button></div>
-                            }
+                var show1,show2
+                if(AdminStore.modules.operations.includes('sortDelete')){
+                    show1=<Button danger size='small' icon={<DeleteFilled />} style={{marginRight:"1em"}} onClick={()=>{deleteRow(record.id)}}>删除</Button>
+                }else{
+                    show1=<Button danger size='small' icon={<DeleteFilled />} style={{marginRight:"1em"}}>没有删除权限</Button>
+                }
+                if(AdminStore.modules.operations.includes('sortAddUpdate'))
+                {        
+                   show2= <Button type='primary' size='small' icon={<EditOutlined />} onClick={()=>{editRow(record)}}>编辑</Button>
+                }else{
+                    show2=<Button danger size='small' icon={<EditOutlined />} style={{marginRight:"1em"}}>没有编辑权限</Button>
+                }
+                return <div>{show1}{show2}</div>
+            }
         },
     ];
 
@@ -113,14 +132,15 @@ export default observer(()=> {
     return (
         <div>
             {
-                AdminStore.modules.operations.includes('characterAdd')?
+                AdminStore.modules.operations.includes('sortAddUpdate')?
                 <Button 
                     type='primary' 
                     style={{marginBottom:'1em',float:'right'}} 
                     onClick={()=>{
                         NewsStore.setEditInfo("")
                         NewsStore.setIsAddVisible(true)
-                    }}>添加分类</Button>:''
+                    }}>添加分类</Button>:<Button type='primary' 
+                    style={{marginBottom:'1em',float:'right'}} >没有增加权限</Button>
             }
            <ModalComponent 
                 isVisible={NewsStore.isAddVisible} 
@@ -128,7 +148,7 @@ export default observer(()=> {
                 close={(v)=>{
                     NewsStore.setIsAddVisible(false)
                     if(v==='ok'){
-                        NewsStore.requireCharacters()
+                        NewsStore.requireSortList()
                     }
                 }}
            />
