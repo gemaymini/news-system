@@ -13,3 +13,7 @@ export async function publishNews(params){
 export async function offlineNews(params){
     return $axios.get('/api/offlinenews',params)
 }
+
+export async function deleteNews(params){
+    return $axios.get('/api/deletenews',params)
+}

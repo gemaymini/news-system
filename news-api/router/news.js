@@ -18,6 +18,7 @@ router.post('/agreecheck',expressJoi(check_schema),newsHandler.agreeCheck)
 router.post('/opposecheck',expressJoi(check_schema),newsHandler.opposeCheck)
 router.get('/publishnews',newsHandler.publishNews)//发布新闻
 router.get('/offlinenews',newsHandler.offlineNews)//下线新闻
+router.get('/deletenews',newsHandler.deleteNews)
 router.get('/getpublishlist',newsHandler.getPublishList)//获取发布的新闻
 router.get('/getcheckhistory',newsHandler.getCheckHistory)
 router.post('/stoporstartnewssort',newsHandler.stopOrStartNewsSort)

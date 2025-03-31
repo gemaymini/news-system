@@ -397,6 +397,11 @@ exports.offlineNews=async(req,res)=>{
     res.ok('下线成功')
 }
 
+exports.deleteNews=async(req,res)=>{
+    await queryT(`delete from news_detail where id=${req.query.id}`,res)
+    res.ok('删除成功')
+}
+
 // 获取审核记录：传入新闻id
 exports.getCheckHistory=async(req,res)=>{
     const data=await query(`select id,check_time,check_person,check_comment,check_result,submit_time from news_checks where news_id=${req.query.id}`)
