@@ -29,6 +29,8 @@ const AdminStore=observable({
                 }
             })
         }
+        console.log("modules")
+        console.log(this.modules)
     },
 
     async requireUserInfo(){

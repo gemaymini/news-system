@@ -2,6 +2,7 @@ import React ,{ useEffect }from 'react';
 import { Tabs, Table, Button, Form, Input, Select, Tag } from 'antd';
 import { getPublishList, publishNews, offlineNews } from '../../request/publish';
 import NewsStore from '../../tstore/newsStore';
+import AdminStore  from '../../tstore/adminStore';
 
 export default function PublishList() {
   const [list, setList] = React.useState([]);
@@ -64,14 +65,18 @@ export default function PublishList() {
       key: 'operation',
       align: 'center',
       render: (text, record) => {
-        if (record.publish_state === 2) {
-          return <Button type="primary" onClick={() => { handleOperation(1, record.id); }}>发布</Button>;
-        }
-        if (record.publish_state === 3) {
-          return <Button type="primary" danger onClick={() => { handleOperation(2, record.id); }}>下线</Button>;
-        }
-        if (record.publish_state === 4) {
-          return <Button type="primary" onClick={() => { handleOperation(1, record.id); }}>重新上线</Button>;
+        if(AdminStore.modules.operations.find(item => item === 'publishUpdate')){
+          if (record.publish_state === 2) {
+            return <Button type="primary" onClick={() => { handleOperation(1, record.id); }}>发布</Button>;
+          }
+          if (record.publish_state === 3) {
+            return <Button type="primary" danger onClick={() => { handleOperation(2, record.id); }}>下线</Button>;
+          }
+          if (record.publish_state === 4) {
+            return <Button type="primary" onClick={() => { handleOperation(1, record.id); }}>重新上线</Button>;
+          }
+        }else{
+          return <Button type="primary" disabled>没有操作</Button>;
         }
       }
     },
