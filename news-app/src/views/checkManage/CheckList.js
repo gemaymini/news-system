@@ -1,10 +1,11 @@
-import React,{useState,useEffect,useRef} from 'react';
-import {getCheckList,drawbackCheck,submitDraft,getCheckHistory} from '../../request/news';
-import {Table,Tag,Button,Tooltip,notification,Drawer,Timeline } from 'antd';
+import React, { useState, useEffect, useRef } from 'react';
+import { getCheckList, drawbackCheck, submitDraft, getCheckHistory } from '../../request/news';
+import { Table, Tag, Button, Tooltip, notification, Drawer, Timeline } from 'antd';
 import NewsStore from '../../tstore/newsStore';
-import { CheckOutlined,RollbackOutlined,EditOutlined,ContainerOutlined,InfoOutlined} from '@ant-design/icons';
+import { CheckOutlined, RollbackOutlined, EditOutlined, ContainerOutlined, InfoOutlined ,LockOutlined} from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import CheckSearchComponent from './CheckSearchComponent'; // 导入搜索组件
+import AdminStore from '../../tstore/adminStore';
 
 export default function CheckList() {
     const [checkList, setCheckList] = useState([]);
@@ -142,6 +143,38 @@ export default function CheckList() {
         },
     ];
 
+    // 权限检查
+// 权限检查
+if (!AdminStore.modules.operations.includes('checkAll')) {
+    return (
+        <div style={{
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            height: '100vh', // 占满整个视口高度
+            backgroundColor: '#f0f2f5', // 柔和的背景色
+        }}>
+            <div style={{
+                textAlign: 'center',
+                padding: '40px',
+                backgroundColor: '#fff', // 白色背景
+                borderRadius: '8px', // 圆角
+                boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)', // 阴影效果
+                maxWidth: '400px', // 限制最大宽度
+                width: '100%', // 自适应小屏幕
+            }}>
+                <LockOutlined style={{ fontSize: '48px', color: '#faad14', marginBottom: '16px' }} /> {/* 锁图标 */}
+                <h2 style={{ marginBottom: '16px', color: '#333' }}>抱歉，您没有访问权限</h2>
+                <p style={{ color: '#666' }}>请联系管理员获取权限或返回上一页。</p>
+                <Button type="primary" onClick={() => navigate(-1)} style={{ marginTop: '16px' }}>
+                    返回
+                </Button>
+            </div>
+        </div>
+    );
+}
+
+    // 如果有权限，则渲染完整的组件
     return (
         <div>
             <CheckSearchComponent onSearch={handleSearch} /> {/* 添加搜索组件 */}
