@@ -32,7 +32,8 @@ exports.addNewsComment=async (req,res)=>{
     const content=req.body.content
     const comment_name=req.auth.username
     const create_time=moment(new Date()).format('YYYY-MM-DD HH:mm:ss')
-    const data=await query(`insert into news_comments set news_id=${news_id},comment_content='${content}',comment_name='${comment_name}',create_time='${create_time}'`,res)
+    const comment_person_id=req.auth.id
+    const data=await query(`insert into news_comments set comment_person_id=${comment_person_id},news_id=${news_id},comment_content='${content}',comment_name='${comment_name}',create_time='${create_time}'`,res)
     res.ok('ok',{
         data
     })
@@ -52,11 +53,12 @@ const getNewid=async(table,res)=>{
 }
 
 // 更新新闻详情表的最新审核id
-const handleUpdateNewLatestCheck=async (news_id,res)=>{
+const handleUpdateNewLatestCheck=async (news_id,req,res)=>{
     // 1.插入审核记录
     const checkInfo={
         news_id,
         submit_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
+        check_person_id:req.auth.id
     }
     await queryT(`insert news_checks set ?`,checkInfo,res)
     // 2.获取审核表最新的id
@@ -73,13 +75,15 @@ exports.createNews=(req,res)=>{
         const newsinfo={
             ...req.body,//含有check_state
             author_name:req.auth.username,
+            author_id:req.auth.id,
         }
+        console.log(req.auth)
         await queryT(`insert into news_detail set ?`,newsinfo,res)
 
          //如果是提交审核，多加一步
         if(newsinfo.check_state===2){
             const news_id=await getNewid('news_detail',res)
-            await handleUpdateNewLatestCheck(news_id,res)
+            await handleUpdateNewLatestCheck(news_id,req,res)
         }
         db.commit((err)=>{
             if (err)  return db.rollback(res.err(err));
@@ -140,7 +144,7 @@ exports.updateDraft=(req,res)=>{
         await queryT(`update news_detail set ? where id=${req.body.id}`,{...req.body},res)
          //如果是提交审核2 、未通过4
         if(req.body.check_state!==1){
-            await handleUpdateNewLatestCheck(req.body.id,res)
+            await handleUpdateNewLatestCheck(req.body.id,req,res)
         }
         db.commit((err)=>{
             if (err)  return db.rollback(res.err(err));
@@ -156,7 +160,7 @@ exports.submitDraft=async(req,res)=>{
         await queryT(`update news_detail set check_state=2 where id=${req.query.id}`,res)
 
         // 2. 更新最新审核id
-        await handleUpdateNewLatestCheck(req.query.id,res)
+        await handleUpdateNewLatestCheck(req.query.id,req,res)
         db.commit((err)=>{
             if (err)  return db.rollback(res.err(err));
             res.ok('成功提交')
