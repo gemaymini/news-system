@@ -22,7 +22,9 @@ exports.decreaseNewsLike=async (req,res)=>{
 
 exports.getNewsComment=async (req,res)=>{
     const news_id=req.body.id
-    const data=await query(`select id,comment_content,comment_name,create_time from news_comments where news_id=${news_id} order by create_time desc`,res)
+    // const data=await query(`select id,comment_content,comment_name,create_time from news_comments where news_id=${news_id} order by create_time desc`,res)
+    const data=await query(`select nc.id,nc.comment_content,u.username as comment_name,
+       nc.create_time from news_comments nc join news_system.user u on u.id=nc.comment_person_id where nc.news_id=${news_id} order by nc.create_time desc`,res)
     res.ok('ok',{
         data
     })
@@ -30,10 +32,12 @@ exports.getNewsComment=async (req,res)=>{
 exports.addNewsComment=async (req,res)=>{
     const news_id=req.body.news_id
     const content=req.body.content
-    const comment_name=req.auth.username
+    // const comment_name=req.auth.username
     const create_time=moment(new Date()).format('YYYY-MM-DD HH:mm:ss')
     const comment_person_id=req.auth.id
-    const data=await query(`insert into news_comments set comment_person_id=${comment_person_id},news_id=${news_id},comment_content='${content}',comment_name='${comment_name}',create_time='${create_time}'`,res)
+    const data=await query(`insert into news_comments set comment_person_id=${comment_person_id},
+                              news_id=${news_id},comment_content='${content}',
+                              create_time='${create_time}'`,res)
     res.ok('ok',{
         data
     })
@@ -74,10 +78,10 @@ exports.createNews=(req,res)=>{
     db.beginTransaction(async (err)=> {
         const newsinfo={
             ...req.body,//含有check_state
-            author_name:req.auth.username,
+            // author_name:req.auth.username,
             author_id:req.auth.id,
         }
-        console.log(req.auth)
+        // console.log(req.auth)
         await queryT(`insert into news_detail set ?`,newsinfo,res)
 
          //如果是提交审核，多加一步
@@ -217,10 +221,10 @@ exports.getNewsDetail = (req, res) => {
     const getNewsSQL = `
         SELECT 
             n.*,
-            u.id AS author_id, 
+#             u.id AS author_id, 
             u.username AS author_name
         FROM news_detail n
-        LEFT JOIN user u ON n.author_name = u.username
+        LEFT JOIN user u ON n.author_id = u.id
         WHERE n.id = ?
     `;
     db.query(getNewsSQL, [req.query.id], (err, results) => {
@@ -265,7 +269,7 @@ exports.drawbackCheck=async(req,res)=>{
     db.beginTransaction(async (err)=> {
         // 1.找到所有的审核记录
         const checkRows=await queryT(`select id from news_checks where news_id=${req.query.id} order by submit_time`)
-        console.log('checkRows',checkRows)
+        // console.log('checkRows',checkRows)
         // 2.修改latestcheckid和审核状态：如果只有一条审核记录，那么撤销后置为空；如果有多条审核记录，那么撤销后赋值上一条
         const info={
             latest_check_id:checkRows.length==1?null:checkRows[1].id,
@@ -313,7 +317,7 @@ exports.agreeCheck=(req,res)=>{
         // 2.更新审核记录
         const info={
             check_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            check_person:req.auth.username,
+            // check_person:req.auth.username,
             check_comment:req.body.check_comment,
             check_result:1
         }

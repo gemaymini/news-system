@@ -100,15 +100,36 @@ exports.getUserInfo = (req, res) => {
         WHERE u.id = ?
     `;
 
+    // const getNewsStatsSQL = `
+    //     SELECT
+    //         COUNT(*) as newsCount,
+    //         COALESCE(SUM(likes), 0) as likesCount,
+    //         COALESCE(SUM(visits), 0) as viewsCount
+    //     FROM news_detail
+    //     WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
+    // `;
     const getNewsStatsSQL = `
         SELECT
             COUNT(*) as newsCount,
             COALESCE(SUM(likes), 0) as likesCount,
             COALESCE(SUM(visits), 0) as viewsCount
         FROM news_detail
-        WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
+        WHERE author_id =? AND publish_state = 3
     `;
 
+    // const getTopNewsSQL = `
+    //     SELECT
+    //         id,
+    //         title,
+    //         create_time,
+    //         visits,
+    //         likes,
+    //         sort_id
+    //     FROM news_detail
+    //     WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
+    //     ORDER BY visits DESC, likes DESC
+    //     LIMIT 5
+    // `;
     const getTopNewsSQL = `
         SELECT
             id,
@@ -118,7 +139,7 @@ exports.getUserInfo = (req, res) => {
             likes,
             sort_id
         FROM news_detail
-        WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
+        WHERE author_id = ? AND publish_state = 3
         ORDER BY visits DESC, likes DESC
         LIMIT 5
     `;
