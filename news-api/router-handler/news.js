@@ -336,7 +336,7 @@ exports.opposeCheck=async(req,res)=>{
         // 2.更新审核记录
         const info={
             check_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            check_person:req.auth.username,
+            // check_person:req.auth.username,
             check_comment:req.body.check_comment,
             check_result:2
         }
