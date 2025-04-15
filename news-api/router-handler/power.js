@@ -92,8 +92,8 @@ exports.addCharacter=(req,res)=>{
         const Query_SelectId=await queryT("select `id` from characters where `name`=?",input.base.name,res)
         let newid=Query_SelectId[0].id
         // 3.在角色模块中间表中插入新模块
-        const moduleInsertSQL=OneToManyInsert('character_modules','character_id','module_id',newid,input.modules) 
-        await queryT(moduleInsertSQL,res)
+        // const moduleInsertSQL=OneToManyInsert('character_modules','character_id','module_id',newid,input.modules)
+        // await queryT(moduleInsertSQL,res)
         // 4.在角色权限中间表中插入新权限（如果有）
         if(input.roles!==''){
             const roleInsertSQL=OneToManyInsert('character_roles','character_id','role_id',newid,input.roles)
@@ -140,14 +140,14 @@ exports.updateCharacter=(req,res)=>{
         const addRolesStr=roleSpliter.addStr
         const deleteRolesStr=roleSpliter.deleteStr
         // 4.删除与增加模块
-        if(deleteModulesStr!==''){
-            const DeleteModuleSQL=`delete from character_modules where module_id in(${deleteModulesStr}) and character_id=${id}`
-            await query(DeleteModuleSQL,res)
-        }
-        if(addModulesStr!==''){
-            const AddModulesSQL=OneToManyInsert('character_modules','character_id','module_id',id,addModulesStr)
-            await query(AddModulesSQL,res)
-        }
+        // if(deleteModulesStr!==''){
+        //     const DeleteModuleSQL=`delete from character_modules where module_id in(${deleteModulesStr}) and character_id=${id}`
+        //     await query(DeleteModuleSQL,res)
+        // }
+        // if(addModulesStr!==''){
+        //     const AddModulesSQL=OneToManyInsert('character_modules','character_id','module_id',id,addModulesStr)
+        //     await query(AddModulesSQL,res)
+        // }
         // 5.删除与增加权限
         if(deleteRolesStr!==''){
             const DeleteRoleSQL=`delete from character_roles where role_id in(${deleteRolesStr}) and character_id=${id}`
@@ -186,8 +186,8 @@ exports.deleteCharacter=(req,res)=>{
     const id=req.query.id
     db.beginTransaction(async (err)=>{
         // 1.从角色模块中间表删除
-        const DeletefromTableWidthModuleSQL=`delete from character_modules where character_id=${id}`
-        await query(DeletefromTableWidthModuleSQL,res)
+        // const DeletefromTableWidthModuleSQL=`delete from character_modules where character_id=${id}`
+        // await query(DeletefromTableWidthModuleSQL,res)
         // 2.从角色权限中间表删除
         const DeletefromTableWidthRoleSQL=`delete from character_roles where character_id=${id}`
         await query(DeletefromTableWidthRoleSQL,res)
