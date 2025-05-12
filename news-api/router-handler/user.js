@@ -1,88 +1,383 @@
+const db = require('../db');
+const { sqlConcat, sqlCount } = require('../utils/sqlhandler');
 
-const db=require('../db')
-const {sqlConcat,sqlCount}=require('../utils/sqlhandler')
-
-//获取用户列表
-exports.getList=(req,res)=>{
-    const head="SELECT id,username,sex,email,character_name,character_id,create_time,state FROM userlist_view"
-    db.query(sqlCount('userlist_view',req.query),(err,result)=>{
-        if(err)return res.err(err)
-        const total=result[0].total
-        if(total){
-            db.query(sqlConcat(head,req.query,'create_time desc'),(err,results)=>{
-                if(err)return res.err(err)
-                res.ok('ok',{
-                    data:results,
+// 获取用户列表
+exports.getList = (req, res) => {
+    const head = "SELECT id, username, sex, email, character_name, character_id, create_time, state FROM userlist_view";
+    db.query(sqlCount('userlist_view', req.query), (err, result) => {
+        if (err) return res.err(err);
+        const total = result[0].total;
+        if (total) {
+            db.query(sqlConcat(head, req.query, 'create_time desc'), (err, results) => {
+                if (err) return res.err(err);
+                res.ok('ok', {
+                    data: results,
                     total
-                })
-            })
-        }else{
-            res.ok('ok',{
-                data:[],
+                });
+            });
+        } else {
+            res.ok('ok', {
+                data: [],
                 total
-            })
+            });
         }
-    })
-}
+    });
+};
 
 // 获取角色列表
-exports.getCharactersOptions=(req,res)=>{
-    const getCharactersOptionsSQL="SELECT id,`name` FROM characters;"
-    db.query(getCharactersOptionsSQL,(err,results)=>{
-        if(err)return res.err(err)
-        res.ok('ok',{
-            data:results,
-        })
-    })
-}
+exports.getCharactersOptions = (req, res) => {
+    const getCharactersOptionsSQL = "SELECT id, `name` FROM characters;";
+    db.query(getCharactersOptionsSQL, (err, results) => {
+        if (err) return res.err(err);
+        res.ok('ok', {
+            data: results,
+        });
+    });
+};
 
 // 添加用户
-exports.addUser=(req,res)=>{
-    const addUserSQL='insert into user set ?'
-    db.query(addUserSQL,[req.body],(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('添加成功！')
-    })
-}
+exports.addUser = (req, res) => {
+    const userData = req.body;
+    const username = req.body.username;
 
-// 修改角色，仅限修改角色
-exports.updateUser=(req,res)=>{
-    const updateUserSQL=`update user set character_id=${req.body.character_id} where id=${req.body.id}`
-    db.query(updateUserSQL,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('更改成功！')
-    })
-}
+    // 获取连接并开始事务
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            // 锁定 user 表中可能的用户名记录
+            const isExistSQL = 'SELECT * FROM user WHERE username = ? FOR UPDATE';
+            connection.query(isExistSQL, [username], (err, results) => {
+                if (err) {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('查询用户名失败:', err);
+                    });
+                    return res.err('查询用户名失败: ' + err.message);
+                }
+
+                if (results.length > 0) {
+                    connection.rollback(() => connection.release());
+                    return res.err('用户名已存在！');
+                }
+
+                // 插入新用户
+                const addUserSQL = 'INSERT INTO user SET ?';
+                connection.query(addUserSQL, [userData], (err, results) => {
+                    if (err) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('添加用户失败:', err);
+                        });
+                        return res.err('添加用户失败: ' + err.message);
+                    }
+
+                    if (results.affectedRows !== 1) {
+                        connection.rollback(() => connection.release());
+                        return res.err('添加用户失败');
+                    }
+
+                    // 提交事务
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                            });
+                            return res.err('事务提交失败: ' + err.message);
+                        }
+                        connection.release();
+                        res.ok('添加成功！');
+                    });
+                });
+            });
+        });
+    });
+};
+
+// 修改用户角色，仅限修改角色
+exports.updateUser = (req, res) => {
+    const userId = req.body.id;
+    const characterId = req.body.character_id;
+
+    // 获取连接并开始事务
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            // 锁定用户记录
+            const lockUserSQL = 'SELECT * FROM user WHERE id = ? FOR UPDATE';
+            connection.query(lockUserSQL, [userId], (err, results) => {
+                if (err) {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('锁定用户记录失败:', err);
+                    });
+                    return res.err('锁定用户记录失败: ' + err.message);
+                }
+
+                if (results.length === 0) {
+                    connection.rollback(() => connection.release());
+                    return res.err('用户不存在！');
+                }
+
+                // 更新用户角色
+                const updateUserSQL = 'UPDATE user SET character_id = ? WHERE id = ?';
+                connection.query(updateUserSQL, [characterId, userId], (err, results) => {
+                    if (err) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('修改角色失败:', err);
+                        });
+                        return res.err('修改角色失败: ' + err.message);
+                    }
+
+                    if (results.affectedRows !== 1) {
+                        connection.rollback(() => connection.release());
+                        return res.err('修改角色失败');
+                    }
+
+                    // 提交事务
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                            });
+                            return res.err('事务提交失败: ' + err.message);
+                        }
+                        connection.release();
+                        res.ok('更改成功！');
+                    });
+                });
+            });
+        });
+    });
+};
 
 // 删除用户
-exports.deleteUser=(req,res)=>{
-    const SQL=`delete from user where id=?`
-    db.query(SQL,req.query.id,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('删除成功')
-    })
-}
+exports.deleteUser = (req, res) => {
+    const userId = req.query.id;
 
-// 停用角色
-exports.stopUser=(req,res)=>{
-    const SQL=`update user set state=0 where id=?`
-    db.query(SQL,req.query.id,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('停用成功')
-    })
-}
+    // 获取连接并开始事务
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            // 锁定用户记录
+            const lockUserSQL = 'SELECT * FROM user WHERE id = ? FOR UPDATE';
+            connection.query(lockUserSQL, [userId], (err, results) => {
+                if (err) {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('锁定用户记录失败:', err);
+                    });
+                    return res.err('锁定用户记录失败: ' + err.message);
+                }
+
+                if (results.length === 0) {
+                    connection.rollback(() => connection.release());
+                    return res.err('用户不存在！');
+                }
+
+                // 删除用户
+                const deleteSQL = 'DELETE FROM user WHERE id = ?';
+                connection.query(deleteSQL, [userId], (err, results) => {
+                    if (err) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('删除用户失败:', err);
+                        });
+                        return res.err('删除用户失败: ' + err.message);
+                    }
+
+                    if (results.affectedRows !== 1) {
+                        connection.rollback(() => connection.release());
+                        return res.err('删除用户失败');
+                    }
+
+                    // 提交事务
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                            });
+                            return res.err('事务提交失败: ' + err.message);
+                        }
+                        connection.release();
+                        res.ok('删除成功');
+                    });
+                });
+            });
+        });
+    });
+};
+
+// 停用用户
+exports.stopUser = (req, res) => {
+    const userId = req.query.id;
+
+    // 获取连接并开始事务
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            // 锁定用户记录
+            const lockUserSQL = 'SELECT * FROM user WHERE id = ? FOR UPDATE';
+            connection.query(lockUserSQL, [userId], (err, results) => {
+                if (err) {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('锁定用户记录失败:', err);
+                    });
+                    return res.err('锁定用户记录失败: ' + err.message);
+                }
+
+                if (results.length === 0) {
+                    connection.rollback(() => connection.release());
+                    return res.err('用户不存在！');
+                }
+
+                // 停用用户
+                const stopUserSQL = 'UPDATE user SET state = 0 WHERE id = ?';
+                connection.query(stopUserSQL, [userId], (err, results) => {
+                    if (err) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('停用用户失败:', err);
+                        });
+                        return res.err('停用用户失败: ' + err.message);
+                    }
+
+                    if (results.affectedRows !== 1) {
+                        connection.rollback(() => connection.release());
+                        return res.err('停用用户失败');
+                    }
+
+                    // 提交事务
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                            });
+                            return res.err('事务提交失败: ' + err.message);
+                        }
+                        connection.release();
+                        res.ok('停用成功');
+                    });
+                });
+            });
+        });
+    });
+};
 
 // 恢复用户
-exports.aliveUser=(req,res)=>{
-    const SQL=`update user set state=1 where id=?`
-    db.query(SQL,req.query.id,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('恢复成功')
-    })
-}
+exports.aliveUser = (req, res) => {
+    const userId = req.query.id;
+
+    // 获取连接并开始事务
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            // 锁定用户记录
+            const lockUserSQL = 'SELECT * FROM user WHERE id = ? FOR UPDATE';
+            connection.query(lockUserSQL, [userId], (err, results) => {
+                if (err) {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('锁定用户记录失败:', err);
+                    });
+                    return res.err('锁定用户记录失败: ' + err.message);
+                }
+
+                if (results.length === 0) {
+                    connection.rollback(() => connection.release());
+                    return res.err('用户不存在！');
+                }
+
+                // 恢复用户
+                const aliveUserSQL = 'UPDATE user SET state = 1 WHERE id = ?';
+                connection.query(aliveUserSQL, [userId], (err, results) => {
+                    if (err) {
+                        connection.rollback(() => {
+                            connection.release();
+                            console.error('恢复用户失败:', err);
+                        });
+                        return res.err('恢复用户失败: ' + err.message);
+                    }
+
+                    if (results.affectedRows !== 1) {
+                        connection.rollback(() => connection.release());
+                        return res.err('恢复用户失败');
+                    }
+
+                    // 提交事务
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                            });
+                            return res.err('事务提交失败: ' + err.message);
+                        }
+                        connection.release();
+                        res.ok('恢复成功');
+                    });
+                });
+            });
+        });
+    });
+};
 
 // 获取用户信息
-// router-handler/user.js
 exports.getUserInfo = (req, res) => {
     const userId = req.params.id;
 
@@ -100,36 +395,15 @@ exports.getUserInfo = (req, res) => {
         WHERE u.id = ?
     `;
 
-    // const getNewsStatsSQL = `
-    //     SELECT
-    //         COUNT(*) as newsCount,
-    //         COALESCE(SUM(likes), 0) as likesCount,
-    //         COALESCE(SUM(visits), 0) as viewsCount
-    //     FROM news_detail
-    //     WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
-    // `;
     const getNewsStatsSQL = `
         SELECT
             COUNT(*) as newsCount,
             COALESCE(SUM(likes), 0) as likesCount,
             COALESCE(SUM(visits), 0) as viewsCount
         FROM news_detail
-        WHERE author_id =? AND publish_state = 3
+        WHERE author_id = ? AND publish_state = 3
     `;
 
-    // const getTopNewsSQL = `
-    //     SELECT
-    //         id,
-    //         title,
-    //         create_time,
-    //         visits,
-    //         likes,
-    //         sort_id
-    //     FROM news_detail
-    //     WHERE author_name = (SELECT username FROM user WHERE id = ?) AND publish_state = 3
-    //     ORDER BY visits DESC, likes DESC
-    //     LIMIT 5
-    // `;
     const getTopNewsSQL = `
         SELECT
             id,

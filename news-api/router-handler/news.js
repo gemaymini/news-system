@@ -1,419 +1,756 @@
+const moment = require('moment');
+const { query, queryT } = require('../utils/query');
+const { sqlCount, sqlConcat } = require('../utils/sqlhandler');
+const db = require('../db');
 
-const moment=require('moment')
-const {query,queryT}=require('../utils/query')
-const {sqlCount,sqlConcat}=require('../utils/sqlhandler')
-const db=require('../db')
-//增加新闻访问量
-exports.increaseNewsView=async (req,res)=>{
-    const news_id=req.body.id
-    await queryT(`update news_detail set visits=visits+1 where id=${news_id}`,res)
-    res.ok('ok')
-}
-exports.increaseNewsLike=async (req,res)=>{
-    const news_id=req.body.id
-    await queryT(`update news_detail set likes=likes+1 where id=${news_id}`,res)
-    res.ok('ok')
-}
-exports.decreaseNewsLike=async (req,res)=>{
-    const news_id=req.body.id
-    await queryT(`update news_detail set likes=likes-1 where id=${news_id}`,res)
-    res.ok('ok')
-}
+// 增加新闻访问量
+exports.increaseNewsView = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.body.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-exports.getNewsComment=async (req,res)=>{
-    const news_id=req.body.id
-    // const data=await query(`select id,comment_content,comment_name,create_time from news_comments where news_id=${news_id} order by create_time desc`,res)
-    const data=await query(`select nc.id,nc.comment_content,u.username as comment_name,
-       nc.create_time from news_comments nc join news_system.user u on u.id=nc.comment_person_id where nc.news_id=${news_id} order by nc.create_time desc`,res)
-    res.ok('ok',{
-        data
-    })
-}
-exports.addNewsComment=async (req,res)=>{
-    const news_id=req.body.news_id
-    const content=req.body.content
-    // const comment_name=req.auth.username
-    const create_time=moment(new Date()).format('YYYY-MM-DD HH:mm:ss')
-    const comment_person_id=req.auth.id
-    const data=await query(`insert into news_comments set comment_person_id=${comment_person_id},
-                              news_id=${news_id},comment_content='${content}',
-                              create_time='${create_time}'`,res)
-    res.ok('ok',{
-        data
-    })
-}
-// 获取新闻类别
-exports.getNewsSort=async (req,res)=>{
-    const data=await query(`select id,name,color,state from news_sorts order by state desc,id asc`,res)
-    res.ok('ok',{
-        data
-    })
-}
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
 
-const getNewid=async(table,res)=>{
-    const SQL=`select max(id) as id from ${table}`
-    const idrows=await queryT(SQL,res)
-    return idrows[0].id
-}
-
-// 更新新闻详情表的最新审核id
-const handleUpdateNewLatestCheck=async (news_id,req,res)=>{
-    // 1.插入审核记录
-    const checkInfo={
-        news_id,
-        submit_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
-        check_person_id:req.auth.id
+        await queryT('UPDATE news_detail SET visits = visits + 1 WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('ok');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('增加访问量失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('增加访问量失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
     }
-    await queryT(`insert news_checks set ?`,checkInfo,res)
-    // 2.获取审核表最新的id
-    const checkidRows=await queryT(`select max(id) as id from news_checks`,res)
-    const check_id=checkidRows[0].id
-    // 3.在新闻详情表更新最新的latest_check_id
-    await queryT(`update news_detail set latest_check_id=${check_id} where id=${news_id}`)
-    return 'ok'
-}
-
-// 创建新闻
-exports.createNews=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        const newsinfo={
-            ...req.body,//含有check_state
-            // author_name:req.auth.username,
-            author_id:req.auth.id,
-        }
-        // console.log(req.auth)
-        await queryT(`insert into news_detail set ?`,newsinfo,res)
-
-         //如果是提交审核，多加一步
-        if(newsinfo.check_state===2){
-            const news_id=await getNewid('news_detail',res)
-            await handleUpdateNewLatestCheck(news_id,req,res)
-        }
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('创建成功')
-        });
-    })
-}
-
-exports.stopOrStartNewsSort=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`update news_sorts set ? where id=${req.body.id}`,{...req.body},res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('更新成功')
-        });
-    })
-}
-exports.deleteNewsSort=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`update news_detail set sort_id=8 where sort_id=${req.body.id}`)
-        await queryT(`delete from news_sorts where id=${req.body.id}`,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('删除成功')
-        });
-    })
-}
-
-exports.addNewsSort=(req,res)=>{    
-
-    console.log('req.body.data',req.body)
-    db.beginTransaction(async (err)=> {
-        const newsSortInfo={
-            name:req.body.name,
-            color:req.body.color,
-            id:req.body.id,
-        }
-        console.log('newsSortInfo',newsSortInfo)
-        await queryT(`insert into news_sorts set ?`,newsSortInfo,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('创建成功')
-        });
-    })
-}
-exports.updateNewsSort=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`update news_sorts set ? where id=${req.body.id}`,{...req.body},res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('更新成功')
-        });
-    })
-}
-// 更新草稿
-exports.updateDraft=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`update news_detail set ? where id=${req.body.id}`,{...req.body},res)
-         //如果是提交审核2 、未通过4
-        if(req.body.check_state!==1){
-            await handleUpdateNewLatestCheck(req.body.id,req,res)
-        }
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('更新成功')
-        });
-    })
-}
-
-// 提交审核(单纯提交 没有修改内容)
-exports.submitDraft=async(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        // 1.先更新草稿状态
-        await queryT(`update news_detail set check_state=2 where id=${req.query.id}`,res)
-
-        // 2. 更新最新审核id
-        await handleUpdateNewLatestCheck(req.query.id,req,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('成功提交')
-        });
-    })
-    
-}
-
-
-// 获取草稿列表
-exports.getDraftList=async(req,res)=>{
-    const params={
-        ...req.query,
-        author_name:req.auth.username
-    }
-    const getCountSQL=sqlCount('news_draflist_view',params)
-    const totalRows=await query(getCountSQL,res)
-
-    if(totalRows.length!==0){
-        const total=totalRows[0].total
-        const head="select * from news_draflist_view"
-        const searchSQL=sqlConcat(head,params,'update_time desc')
-        const draftRows=await query(searchSQL,res)
-        res.ok('ok',{
-            data:draftRows,
-            total
-        })
-    }else{
-        res.ok('ok',{
-            data:[],
-            total:0
-        })
-    }
-}
-
-
-// 删除草稿/新闻 传id,check_state
-exports.deleteDraft=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`delete from news_checks where news_id=${req.query.id}`,res)
-        await queryT(`delete from news_comments where news_id=${req.query.id}`,res)
-        await queryT(`delete from news_detail where id=${req.query.id}`,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('删除成功')
-        });
-    })
-}
-
-
-// 获取新闻详情
-// 在你的后端文件中
-exports.getNewsDetail = (req, res) => {
-    const getNewsSQL = `
-        SELECT 
-            n.*,
-#             u.id AS author_id, 
-            u.username AS author_name
-        FROM news_detail n
-        LEFT JOIN user u ON n.author_id = u.id
-        WHERE n.id = ?
-    `;
-    db.query(getNewsSQL, [req.query.id], (err, results) => {
-        if (err) return res.err(err);
-        if (results.length === 0) {
-            return res.status(404).json({ status: 404, message: '新闻不存在' });
-        }
-        res.ok('ok', { data: results[0] });
-    });
 };
 
+// 增加新闻点赞
+exports.increaseNewsLike = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.body.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-// 获取审核列表--用户版
-exports.getCheckList=async(req,res)=>{
-    const params={
-        ...req.query,
-        author_name:req.auth.username
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('UPDATE news_detail SET likes = likes + 1 WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('ok');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('增加点赞失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('增加点赞失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
     }
-    const getCountSQL=sqlCount('news_checklist_view',params)
-    const totalRows=await query(getCountSQL,res)
+};
 
-    if(totalRows.length!==0){
-        const total=totalRows[0].total
-        const head="select * from news_checklist_view"
-        const searchSQL=sqlConcat(head,params,'check_state desc,check_time desc')
-        const draftRows=await query(searchSQL,res)
-        res.ok('ok',{
-            data:draftRows,
-            total
-        })
-    }else{
-        res.ok('ok',{
-            data:[],
-            total:0
-        })
+// 减少新闻点赞
+exports.decreaseNewsLike = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.body.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('UPDATE news_detail SET likes = likes - 1 WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('ok');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('减少点赞失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('减少点赞失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
     }
-}
+};
 
+// 获取新闻评论
+exports.getNewsComment = async (req, res) => {
+    try {
+        const news_id = req.body.id;
+        const data = await query(
+            `SELECT nc.id, nc.comment_content, u.username AS comment_name, nc.create_time
+             FROM news_comments nc
+                      JOIN news_system.user u ON u.id = nc.comment_person_id
+             WHERE nc.news_id = ?
+             ORDER BY nc.create_time DESC`,
+            [news_id],
+            res
+        );
+        res.ok('ok', { data });
+    } catch (err) {
+        console.error('获取评论失败:', err);
+        res.err('获取评论失败: ' + err.message);
+    }
+};
+
+// 添加新闻评论
+exports.addNewsComment = async (req, res) => {
+    let connection;
+    try {
+        const { news_id, content } = req.body;
+        const comment_person_id = req.auth.id;
+        const create_time = moment(new Date()).format('YYYY-MM-DD HH:mm:ss');
+
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        const commentData = { comment_person_id, news_id, comment_content: content, create_time };
+        await queryT('INSERT INTO news_comments SET ?', [commentData], res, connection);
+        await connection.commit();
+        res.ok('ok', { data: { id: results.insertId } });
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('添加评论失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('添加评论失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 获取新闻类别
+exports.getNewsSort = async (req, res) => {
+    try {
+        const data = await query('SELECT id, name, color, state FROM news_sorts ORDER BY state DESC, id ASC', res);
+        res.ok('ok', { data });
+    } catch (err) {
+        console.error('获取新闻类别失败:', err);
+        res.err('获取新闻类别失败: ' + err.message);
+    }
+};
+
+// 获取最大 ID（辅助函数）
+const getNewId = async (table, res, connection) => {
+    const [idRows] = await queryT(`SELECT MAX(id) AS id FROM ${table}`, null, res, connection);
+    return idRows.id;
+};
+
+// 更新新闻最新审核 ID（辅助函数）
+const handleUpdateNewLatestCheck = async (news_id, req, res, connection) => {
+    const checkInfo = {
+        news_id,
+        submit_time: moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
+        check_person_id: req.auth.id
+    };
+    await queryT('INSERT INTO news_checks SET ?', [checkInfo], res, connection);
+    const checkId = await getNewId('news_checks', res, connection);
+    await queryT('UPDATE news_detail SET latest_check_id = ? WHERE id = ?', [checkId, news_id], res, connection);
+    return 'ok';
+};
+
+// 创建新闻
+exports.createNews = async (req, res) => {
+    let connection;
+    try {
+        const newsInfo = {
+            ...req.body,
+            author_id: req.auth.id
+        };
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        await queryT('INSERT INTO news_detail SET ?', [newsInfo], res, connection);
+        if (newsInfo.check_state === 2) {
+            const news_id = await getNewId('news_detail', res, connection);
+            await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+            await handleUpdateNewLatestCheck(news_id, req, res, connection);
+        }
+
+        await connection.commit();
+        res.ok('创建成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('创建新闻失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('创建新闻失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 停用/启用新闻类别
+exports.stopOrStartNewsSort = async (req, res) => {
+    let connection;
+    try {
+        const sort_id = req.body.id;
+        const sortData = { ...req.body };
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_sorts WHERE id = ? FOR UPDATE', [sort_id], res, connection);
+        if (results.length === 0) throw new Error('新闻类别不存在！');
+
+        await queryT('UPDATE news_sorts SET ? WHERE id = ?', [sortData, sort_id], res, connection);
+        await connection.commit();
+        res.ok('更新成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('更新新闻类别失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('更新新闻类别失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 删除新闻类别
+exports.deleteNewsSort = async (req, res) => {
+    let connection;
+    try {
+        const sort_id = req.body.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [sortResults] = await queryT('SELECT * FROM news_sorts WHERE id = ? FOR UPDATE', [sort_id], res, connection);
+        if (sortResults.length === 0) throw new Error('新闻类别不存在！');
+
+        await queryT('SELECT * FROM news_detail WHERE sort_id = ? FOR UPDATE', [sort_id], res, connection);
+        await queryT('UPDATE news_detail SET sort_id = 8 WHERE sort_id = ?', [sort_id], res, connection);
+        await queryT('DELETE FROM news_sorts WHERE id = ?', [sort_id], res, connection);
+
+        await connection.commit();
+        res.ok('删除成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('删除新闻类别失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('删除新闻类别失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 添加新闻类别
+exports.addNewsSort = async (req, res) => {
+    let connection;
+    try {
+        const newsSortInfo = {
+            name: req.body.name,
+            color: req.body.color,
+            id: req.body.id
+        };
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_sorts WHERE name = ? OR id = ? FOR UPDATE', [newsSortInfo.name, newsSortInfo.id], res, connection);
+        if (results.length > 0) throw new Error('类别名称或 ID 已存在！');
+
+        await queryT('INSERT INTO news_sorts SET ?', [newsSortInfo], res, connection);
+        await connection.commit();
+        res.ok('创建成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('添加新闻类别失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('添加新闻类别失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 更新新闻类别
+exports.updateNewsSort = async (req, res) => {
+    let connection;
+    try {
+        const sort_id = req.body.id;
+        const sortData = { ...req.body };
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_sorts WHERE id = ? FOR UPDATE', [sort_id], res, connection);
+        if (results.length === 0) throw new Error('新闻类别不存在！');
+
+        await queryT('UPDATE news_sorts SET ? WHERE id = ?', [sortData, sort_id], res, connection);
+        await connection.commit();
+        res.ok('更新成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('更新新闻类别失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('更新新闻类别失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 更新草稿
+exports.updateDraft = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.body.id;
+        const newsData = { ...req.body };
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('UPDATE news_detail SET ? WHERE id = ?', [newsData, news_id], res, connection);
+        if (newsData.check_state !== 1) {
+            await handleUpdateNewLatestCheck(news_id, req, res, connection);
+        }
+
+        await connection.commit();
+        res.ok('更新成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('更新草稿失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('更新草稿失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 提交审核
+exports.submitDraft = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('UPDATE news_detail SET check_state = 2 WHERE id = ?', [news_id], res, connection);
+        await handleUpdateNewLatestCheck(news_id, req, res, connection);
+
+        await connection.commit();
+        res.ok('成功提交');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('提交审核失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('提交审核失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 获取草稿列表
+exports.getDraftList = async (req, res) => {
+    try {
+        const params = {
+            ...req.query,
+            author_name: req.auth.username
+        };
+        const getCountSQL = sqlCount('news_draflist_view', params);
+        const totalRows = await query(getCountSQL, res);
+
+        if (totalRows.length !== 0) {
+            const total = totalRows[0].total;
+            const head = "SELECT * FROM news_draflist_view";
+            const searchSQL = sqlConcat(head, params, 'update_time DESC');
+            const draftRows = await query(searchSQL, res);
+            res.ok('ok', { data: draftRows, total });
+        } else {
+            res.ok('ok', { data: [], total: 0 });
+        }
+    } catch (err) {
+        console.error('获取草稿列表失败:', err);
+        res.err('获取草稿列表失败: ' + err.message);
+    }
+};
+
+// 删除草稿/新闻
+exports.deleteDraft = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [newsResults] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (newsResults.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('SELECT * FROM news_checks WHERE news_id = ? FOR UPDATE', [news_id], res, connection);
+        await queryT('DELETE FROM news_checks WHERE news_id = ?', [news_id], res, connection);
+
+        await queryT('SELECT * FROM news_comments WHERE news_id = ? FOR UPDATE', [news_id], res, connection);
+        await queryT('DELETE FROM news_comments WHERE news_id = ?', [news_id], res, connection);
+
+        await queryT('DELETE FROM news_detail WHERE id = ?', [news_id], res, connection);
+
+        await connection.commit();
+        res.ok('删除成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('删除草稿失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('删除草稿失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 获取新闻详情
+exports.getNewsDetail = async (req, res) => {
+    try {
+        const news_id = req.query.id;
+        const data = await query(
+            `SELECT n.*, u.username AS author_name
+             FROM news_detail n
+                      LEFT JOIN user u ON n.author_id = u.id
+             WHERE n.id = ?`,
+            [news_id],
+            res
+        );
+        if (data.length === 0) {
+            return res.status(404).json({ status: 404, message: '新闻不存在' });
+        }
+        res.ok('ok', { data: data[0] });
+    } catch (err) {
+        console.error('获取新闻详情失败:', err);
+        res.err('获取新闻详情失败: ' + err.message);
+    }
+};
+
+// 获取审核列表（用户版）
+exports.getCheckList = async (req, res) => {
+    try {
+        const params = {
+            ...req.query,
+            author_name: req.auth.username
+        };
+        const getCountSQL = sqlCount('news_checklist_view', params);
+        const totalRows = await query(getCountSQL, res);
+
+        if (totalRows.length !== 0) {
+            const total = totalRows[0].total;
+            const head = "SELECT * FROM news_checklist_view";
+            const searchSQL = sqlConcat(head, params, 'check_state DESC, check_time DESC');
+            const draftRows = await query(searchSQL, res);
+            res.ok('ok', { data: draftRows, total });
+        } else {
+            res.ok('ok', { data: [], total: 0 });
+        }
+    } catch (err) {
+        console.error('获取审核列表失败:', err);
+        res.err('获取审核列表失败: ' + err.message);
+    }
+};
 
 // 撤销审核
-exports.drawbackCheck=async(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        // 1.找到所有的审核记录
-        const checkRows=await queryT(`select id from news_checks where news_id=${req.query.id} order by submit_time`)
-        // console.log('checkRows',checkRows)
-        // 2.修改latestcheckid和审核状态：如果只有一条审核记录，那么撤销后置为空；如果有多条审核记录，那么撤销后赋值上一条
-        const info={
-            latest_check_id:checkRows.length==1?null:checkRows[1].id,
-            check_state:1,
-            update_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss')
+exports.drawbackCheck = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [newsResults] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (newsResults.length === 0) throw new Error('新闻不存在！');
+
+        const checkRows = await queryT('SELECT id FROM news_checks WHERE news_id = ? ORDER BY submit_time DESC FOR UPDATE', [news_id], res, connection);
+        if (checkRows.length === 0) throw new Error('无审核记录！');
+
+        const info = {
+            latest_check_id: checkRows.length === 1 ? null : checkRows[1].id,
+            check_state: 1,
+            update_time: moment(new Date()).format('YYYY-MM-DD HH:mm:ss')
+        };
+        await queryT('UPDATE news_detail SET ? WHERE id = ?', [info, news_id], res, connection);
+        await queryT('DELETE FROM news_checks WHERE id = ?', [checkRows[0].id], res, connection);
+
+        await connection.commit();
+        res.ok('成功撤销');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('撤销审核失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('撤销审核失败: ' + err.message);
         }
-        await queryT(`update news_detail set ? where id=${req.query.id}`,info,res)
-
-        // 3.删除审核记录
-        await queryT(`delete from news_checks where id=${checkRows[0].id}`,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('成功撤销')
-        });
-    })
-}
-
-
-// 获取审核列表--管理员版
-exports.getCheckListForManager=async(req,res)=>{
-    const getCountSQL=sqlCount('news_checklist_view',req.query)
-    const totalRows=await query(getCountSQL,res)
-    if(totalRows.length!==0){
-        const total=totalRows[0].total
-        const head="select id,title,latest_check_id,submit_time,author_name,sort_id from news_checklist_view "
-        const searchSQL=sqlConcat(head,{...req.query,check_state:"2"},'submit_time asc')
-        const checkRows=await query(searchSQL,res)
-        res.ok('ok',{
-            data:checkRows,
-            total
-        })
-    }else{
-        res.ok('ok',{
-            data:[],
-            total:0
-        })
+    } finally {
+        if (connection) connection.release();
     }
-}
+};
+
+// 获取审核列表（管理员版）
+exports.getCheckListForManager = async (req, res) => {
+    try {
+        const getCountSQL = sqlCount('news_checklist_view', req.query);
+        const totalRows = await query(getCountSQL, res);
+
+        if (totalRows.length !== 0) {
+            const total = totalRows[0].total;
+            const head = "SELECT id, title, latest_check_id, submit_time, author_name, sort_id FROM news_checklist_view";
+            const searchSQL = sqlConcat(head, { ...req.query, check_state: "2" }, 'submit_time ASC');
+            const checkRows = await query(searchSQL, res);
+            res.ok('ok', { data: checkRows, total });
+        } else {
+            res.ok('ok', { data: [], total: 0 });
+        }
+    } catch (err) {
+        console.error('获取管理员审核列表失败:', err);
+        res.err('获取管理员审核列表失败: ' + err.message);
+    }
+};
 
 // 审核通过
-exports.agreeCheck=(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        // 1.设置新闻详情表的check_state--3
-        await queryT(`update news_detail set check_state=3,publish_state=2 where id=${req.body.id}`,res)
-        // 2.更新审核记录
-        const info={
-            check_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            // check_person:req.auth.username,
-            check_comment:req.body.check_comment,
-            check_result:1
+exports.agreeCheck = async (req, res) => {
+    let connection;
+    try {
+        const { id, latest_check_id, check_comment } = req.body;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [newsResults] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [id], res, connection);
+        if (newsResults.length === 0) throw new Error('新闻不存在！');
+
+        const [checkResults] = await queryT('SELECT * FROM news_checks WHERE id = ? FOR UPDATE', [latest_check_id], res, connection);
+        if (checkResults.length === 0) throw new Error('审核记录不存在！');
+
+        await queryT('UPDATE news_detail SET check_state = 3, publish_state = 2 WHERE id = ?', [id], res, connection);
+        const info = {
+            check_time: moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
+            check_comment,
+            check_result: 1
+        };
+        await queryT('UPDATE news_checks SET ? WHERE id = ?', [info, latest_check_id], res, connection);
+
+        await connection.commit();
+        res.ok('已反馈');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('审核通过失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('审核通过失败: ' + err.message);
         }
-        await queryT(`update news_checks set ? where id=${req.body.latest_check_id}`,info,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('已反馈')
-        });
-    })
-}
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// ... 前述代码（increaseNewsView 到 agreeCheck）保持不变，略 ...
 
 // 审核不通过
-exports.opposeCheck=async(req,res)=>{
-    db.beginTransaction(async (err)=> {
-        await queryT(`update news_detail set check_state=4 where id=${req.body.id}`,res)
-        // 2.更新审核记录
-        const info={
-            check_time:moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
-            // check_person:req.auth.username,
-            check_comment:req.body.check_comment,
-            check_result:2
+exports.opposeCheck = async (req, res) => {
+    let connection;
+    try {
+        const { id, latest_check_id, check_comment } = req.body;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
+
+        const [newsResults] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [id], res, connection);
+        if (newsResults.length === 0) throw new Error('新闻不存在！');
+
+        const [checkResults] = await queryT('SELECT * FROM news_checks WHERE id = ? FOR UPDATE', [latest_check_id], res, connection);
+        if (checkResults.length === 0) throw new Error('审核记录不存在！');
+
+        await queryT('UPDATE news_detail SET check_state = 4 WHERE id = ?', [id], res, connection);
+        const info = {
+            check_time: moment(new Date()).format('YYYY-MM-DD HH:mm:ss'),
+            check_comment,
+            check_result: 2
+        };
+        await queryT('UPDATE news_checks SET ? WHERE id = ?', [info, latest_check_id], res, connection);
+
+        await connection.commit();
+        res.ok('已反馈');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('审核不通过失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('审核不通过失败: ' + err.message);
         }
-        await queryT(`update news_checks set ? where id=${req.body.latest_check_id}`,info,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('已反馈')
-        });
-    })
-}
+    } finally {
+        if (connection) connection.release();
+    }
+};
 
-// 发布列表
-
+// 获取发布列表
 exports.getPublishList = async (req, res) => {
     try {
-        // 验证 publishState 是否存在且有效
-        const publishState = req.query.publishState;
+        const { publishState, title, author_name, sort_id } = req.query;
         if (!publishState) {
             return res.status(400).json({
                 status: 400,
-                message: 'publishState is required and should be a valid number',
+                message: 'publishState is required and should be a valid number'
             });
         }
 
-        let queryStr = `SELECT id, title, sort_id, author_name, check_time, check_person, publish_state ,content FROM news_checklist_view WHERE publish_state=${publishState}`;
-        
-        // 添加搜索条件
-        if (req.query.title) {
-            queryStr += ` AND title LIKE '%${req.query.title}%'`;
+        let params = [publishState];
+        let queryStr = `SELECT id, title, sort_id, author_name, check_time, check_person, publish_state, content
+                        FROM news_checklist_view
+                        WHERE publish_state = ?`;
+
+        if (title) {
+            queryStr += ` AND title LIKE ?`;
+            params.push(`%${title}%`);
         }
-        if (req.query.author_name) {
-            queryStr += ` AND author_name LIKE '%${req.query.author_name}%'`;
+        if (author_name) {
+            queryStr += ` AND author_name LIKE ?`;
+            params.push(`%${author_name}%`);
         }
-        // 添加 sort_id 搜索条件
-        if (req.query.sort_id && req.query.sort_id !== "0") {  // 0表示所有类型，不需要过滤
-            queryStr += ` AND sort_id=${req.query.sort_id}`;
+        if (sort_id && sort_id !== "0") {
+            queryStr += ` AND sort_id = ?`;
+            params.push(sort_id);
         }
 
-        const data = await query(queryStr);
-        res.ok('ok', {
-            data
-        });
-    } catch (error) {
-        console.error('Error fetching publish list:', error);
+        const data = await query(queryStr, params, res);
+        res.ok('ok', { data });
+    } catch (err) {
+        console.error('获取发布列表失败:', err);
         res.status(500).json({
             status: 500,
-            message: 'Internal Server Error',
-            error
+            message: '获取发布列表失败: ' + err.message
         });
     }
 };
 
+// 发布新闻
+exports.publishNews = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
 
+        await queryT('UPDATE news_detail SET publish_state = 3 WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('发布成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('发布新闻失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('发布新闻失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
 
+// 下线新闻
+exports.offlineNews = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-// 发布新闻 
-exports.publishNews=async(req,res)=>{
-    await queryT(`update news_detail set publish_state=3 where id=${req.query.id}`,res)
-    res.ok('发布成功')
-}
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
 
-// 下线新闻 
-exports.offlineNews=async(req,res)=>{
-    await queryT(`update news_detail set publish_state=4 where id=${req.query.id}`,res)
-    res.ok('下线成功')
-}
+        await queryT('UPDATE news_detail SET publish_state = 4 WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('下线成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('下线新闻失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('下线新闻失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
 
-exports.deleteNews=async(req,res)=>{
-    await queryT(`delete from news_detail where id=${req.query.id}`,res)
-    res.ok('删除成功')
-}
+// 删除新闻
+exports.deleteNews = async (req, res) => {
+    let connection;
+    try {
+        const news_id = req.query.id;
+        connection = await db.getConnection();
+        await connection.beginTransaction();
 
-// 获取审核记录：传入新闻id
-exports.getCheckHistory=async(req,res)=>{
-    const data=await query(`select id,check_time,check_person,check_comment,check_result,submit_time from news_checks where news_id=${req.query.id}`)
-    res.ok('ok',{
-        data
-    })
-}
+        const [results] = await queryT('SELECT * FROM news_detail WHERE id = ? FOR UPDATE', [news_id], res, connection);
+        if (results.length === 0) throw new Error('新闻不存在！');
+
+        await queryT('DELETE FROM news_detail WHERE id = ?', [news_id], res, connection);
+        await connection.commit();
+        res.ok('删除成功');
+    } catch (err) {
+        if (connection) await connection.rollback();
+        console.error('删除新闻失败:', err);
+        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+            res.err('数据库锁等待超时，请稍后重试');
+        } else {
+            res.err('删除新闻失败: ' + err.message);
+        }
+    } finally {
+        if (connection) connection.release();
+    }
+};
+
+// 获取审核记录
+exports.getCheckHistory = async (req, res) => {
+    try {
+        const news_id = req.query.id;
+        const data = await query(
+            `SELECT id, check_time, check_person, check_comment, check_result, submit_time
+             FROM news_checks
+             WHERE news_id = ?`,
+            [news_id],
+            res
+        );
+        res.ok('ok', { data });
+    } catch (err) {
+        console.error('获取审核记录失败:', err);
+        res.err('获取审核记录失败: ' + err.message);
+    }
+};

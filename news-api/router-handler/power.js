@@ -1,243 +1,545 @@
-const db=require('../db')
-const {NodesToTree,filterModuleHasRoles,splitAddAndDelete,childrenInsertParent}=require('../utils/structurehandler')
-const {OneToManyInsert,sqlConcat,sqlCount}=require('../utils/sqlhandler')
-const {query,queryT}=require('../utils/query')
+const db = require('../db');
+const { NodesToTree, filterModuleHasRoles, splitAddAndDelete, childrenInsertParent } = require('../utils/structurehandler');
+const { OneToManyInsert, sqlConcat, sqlCount } = require('../utils/sqlhandler');
+const { query, queryT } = require('../utils/query');
 
 // 获取角色列表
-exports.getCharacters=async (req,res)=>{
-    //获取总数
-    const getCountSQL=sqlCount('characters',req.query)
-    const totalRows=await query(getCountSQL,res)
-    if(totalRows.length!==0){
-        //获取数据
-        const total=totalRows[0].total
-        const head="SELECT id,name,description,state,`key` FROM characters"
-        const searchSQL=sqlConcat(head,req.query)
-        
-        const characterRows=await query(searchSQL,res)
-        res.ok('ok',{
-            data:characterRows,
-            total
-        })
-    }else{
-        res.ok('ok',{
-            data:[],
-            total:0
-        })
+exports.getCharacters = async (req, res) => {
+    try {
+        const getCountSQL = sqlCount('characters', req.query);
+        const totalRows = await query(getCountSQL, res);
+        if (totalRows.length !== 0) {
+            const total = totalRows[0].total;
+            const head = "SELECT id, name, description, state, `key` FROM characters";
+            const searchSQL = sqlConcat(head, req.query);
+            const characterRows = await query(searchSQL, res);
+            res.ok('ok', {
+                data: characterRows,
+                total
+            });
+        } else {
+            res.ok('ok', {
+                data: [],
+                total: 0
+            });
+        }
+    } catch (err) {
+        console.error('获取角色列表失败:', err);
+        res.err('获取角色列表失败: ' + err.message);
     }
-}
+};
 
 // 停用角色
-exports.stopCharacter=(req,res)=>{
-    const id=req.query.id
-    db.beginTransaction(async (err)=> {
-        if (err) return res.err(err)
-        await queryT(`update characters set state=0 where id=${id}`,res) //1.更新状态
-        const userRows=await queryT(`select id from user where character_id=${id}`,res) //2.找到用户
-        if(userRows.length!==0){
-            await queryT(`update user set character_id=6 where id in(${userRows.map(item=>item.id).join(',')})`,res) //3.移除用户
+exports.stopCharacter = (req, res) => {
+    const id = req.query.id;
+
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
         }
-        db.commit((err)=>{
-            if (err)  return db.rollback(res.err(err));
-            res.ok('停用成功')
-        });
-    })
-}
 
-// 恢复角色
-exports.aliveCharacter=async (req,res)=>{
-    await query(`update characters set state=1 where id=${req.query.id}`,res)
-    res.ok('恢复成功')
-}
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
 
-// 获取所有开启的模块
-exports.getAllOpenModules=async (req,res)=>{
-    const rows=await query('select `key`,`id` as module_id,`name`,parent_id from module',res)
-    res.ok('ok',{
-        data:NodesToTree(rows,'module_id','parent_id',0)
-    })
-}
+            queryT('SELECT * FROM characters WHERE id = ? FOR UPDATE', [id], res, connection)
+                .then((results) => {
+                    if (results.length === 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色不存在！');
+                        });
+                        return;
+                    }
 
-// 过滤包含权限的模块
-exports.getRolesByModule=async(req,res)=>{
-    let moduleStr=req.query.moduleStr
-    if(moduleStr==='')return res.err('至少选择一个模块')
-    //1.获取模块
-    const mosuleSQL="select id as module_id,`name` as module_name from module where id in("+moduleStr+")"
-    const Modules=await query(mosuleSQL,res)
-    //2.获取属于模块的权限
-    const roleSQL="select id as role_id,`name` as role_name,module_id from roles where module_id in("+moduleStr+")"
-    const Roles=await query(roleSQL,res)
-    res.ok('ok',{
-        data:filterModuleHasRoles(Modules,Roles)
-    })
-}
+                    return queryT('UPDATE characters SET state = 0 WHERE id = ?', [id], res, connection);
+                })
+                .then(() => {
+                    return queryT('SELECT id FROM user WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                })
+                .then((userRows) => {
+                    if (userRows.length === 0) return Promise.resolve();
 
-// 添加角色-判断角色是否存在
-exports.isNewCharaterExist=async (req,res)=>{
-    let SQL=`select id from characters where \`name\`='${req.query.name}' or \`key\`='${req.query.key}'`
-    const rows=await query(SQL,res)
-    if(rows.length!==0)return res.err('角色名称已存在！')
-    res.ok()
-}
-
-exports.addCharacter=(req,res)=>{
-    //base:基本信息对象；modules：模块字符串；roles：权限字符串
-    const input=JSON.parse(req.body.data)
-    db.beginTransaction(async (err)=> {
-        if (err) return res.err(err)
-        // 1.插入到角色表
-        await queryT("insert into characters set ?",input.base,res)
-        // 2.找到新角色的id
-        const Query_SelectId=await queryT("select `id` from characters where `name`=?",input.base.name,res)
-        let newid=Query_SelectId[0].id
-        // 3.在角色模块中间表中插入新模块
-        // const moduleInsertSQL=OneToManyInsert('character_modules','character_id','module_id',newid,input.modules)
-        // await queryT(moduleInsertSQL,res)
-        // 4.在角色权限中间表中插入新权限（如果有）
-        if(input.roles!==''){
-            const roleInsertSQL=OneToManyInsert('character_roles','character_id','role_id',newid,input.roles)
-            await queryT(roleInsertSQL,res)
-        }
-        db.commit((err)=>{
-            if (err)  return db.rollback(function() {throw err});
-            res.ok('新建成功')
+                    const userIds = userRows.map(item => item.id);
+                    return queryT('UPDATE user SET character_id = 6 WHERE id IN (?)', [userIds], res, connection);
+                })
+                .then(() => {
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                                res.err('事务提交失败: ' + err.message);
+                            });
+                            return;
+                        }
+                        connection.release();
+                        res.ok('停用成功');
+                    });
+                })
+                .catch((err) => {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('停用角色失败:', err);
+                        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                            res.err('数据库锁等待超时，请稍后重试');
+                        } else {
+                            res.err('停用角色失败: ' + err.message);
+                        }
+                    });
+                });
         });
     });
-}
+};
+
+// 恢复角色
+exports.aliveCharacter = (req, res) => {
+    const id = req.query.id;
+
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            queryT('SELECT * FROM characters WHERE id = ? FOR UPDATE', [id], res, connection)
+                .then((results) => {
+                    if (results.length === 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色不存在！');
+                        });
+                        return;
+                    }
+
+                    return queryT('UPDATE characters SET state = 1 WHERE id = ?', [id], res, connection);
+                })
+                .then(() => {
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                                res.err('事务提交失败: ' + err.message);
+                            });
+                            return;
+                        }
+                        connection.release();
+                        res.ok('恢复成功');
+                    });
+                })
+                .catch((err) => {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('恢复角色失败:', err);
+                        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                            res.err('数据库锁等待超时，请稍后重试');
+                        } else {
+                            res.err('恢复角色失败: ' + err.message);
+                        }
+                    });
+                });
+        });
+    });
+};
+
+// 获取所有开启的模块
+exports.getAllOpenModules = async (req, res) => {
+    try {
+        const rows = await query('SELECT `key`, `id` AS module_id, `name`, parent_id FROM module', res);
+        res.ok('ok', {
+            data: NodesToTree(rows, 'module_id', 'parent_id', 0)
+        });
+    } catch (err) {
+        console.error('获取模块失败:', err);
+        res.err('获取模块失败: ' + err.message);
+    }
+};
+
+// 过滤包含权限的模块
+exports.getRolesByModule = async (req, res) => {
+    try {
+        let moduleStr = req.query.moduleStr;
+        if (moduleStr === '') return res.err('至少选择一个模块');
+        const moduleSQL = "SELECT id AS module_id, `name` AS module_name FROM module WHERE id IN (?)";
+        const modules = await query(moduleSQL, [moduleStr.split(',')], res);
+        const roleSQL = "SELECT id AS role_id, `name` AS role_name, module_id FROM roles WHERE module_id IN (?)";
+        const roles = await query(roleSQL, [moduleStr.split(',')], res);
+        res.ok('ok', {
+            data: filterModuleHasRoles(modules, roles)
+        });
+    } catch (err) {
+        console.error('获取权限模块失败:', err);
+        res.err('获取权限模块失败: ' + err.message);
+    }
+};
+
+// 添加角色-判断角色是否存在
+exports.isNewCharaterExist = async (req, res) => {
+    try {
+        const { name, key } = req.query;
+        const sql = 'SELECT id FROM characters WHERE `name` = ? OR `key` = ?';
+        const rows = await query(sql, [name, key], res);
+        if (rows.length !== 0) return res.err('角色名称或键已存在！');
+        res.ok();
+    } catch (err) {
+        console.error('检查角色存在失败:', err);
+        res.err('检查角色存在失败: ' + err.message);
+    }
+};
+
+// 添加角色
+exports.addCharacter = (req, res) => {
+    const input = JSON.parse(req.body.data);
+    const { base, roles, modules } = input; // 包含 modules 以支持 character_modules
+
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            queryT('SELECT * FROM characters WHERE `name` = ? OR `key` = ? FOR UPDATE', [base.name, base.key], res, connection)
+                .then((results) => {
+                    if (results.length > 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色名称或键已存在！');
+                        });
+                        return;
+                    }
+
+                    return queryT('INSERT INTO characters SET ?', [base], res, connection);
+                })
+                .then((result) => {
+                    return queryT('SELECT id FROM characters WHERE `name` = ?', [base.name], res, connection);
+                })
+                .then((results) => {
+                    if (results.length === 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色插入失败！');
+                        });
+                        return;
+                    }
+                    const newId = results[0].id;
+
+                    // 插入角色模块（如果启用）
+                    if (modules && modules !== '') {
+                        const moduleInsertSQL = OneToManyInsert('character_modules', 'character_id', 'module_id', newId, modules);
+                        return queryT(moduleInsertSQL, null, res, connection);
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    // 插入角色权限（如果有）
+                    if (roles && roles !== '') {
+                        const roleInsertSQL = OneToManyInsert('character_roles', 'character_id', 'role_id', newId, roles);
+                        return queryT(roleInsertSQL, null, res, connection);
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                                res.err('事务提交失败: ' + err.message);
+                            });
+                            return;
+                        }
+                        connection.release();
+                        res.ok('新建成功');
+                    });
+                })
+                .catch((err) => {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('添加角色失败:', err);
+                        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                            res.err('数据库锁等待超时，请稍后重试');
+                        } else {
+                            res.err('添加角色失败: ' + err.message);
+                        }
+                    });
+                });
+        });
+    });
+};
 
 // 编辑角色-判断角色是否存在
-exports.isCharaterExist=async(req,res)=>{
-    const oldrow=await query("select name,`key` from characters where id=?",req.query.id,res)
-    const SQL=`select id from characters where (\`name\`='${req.query.name}' and \`name\`!='${oldrow[0].name}') or (\`key\`='${req.query.key}' and \`key\`!='${oldrow[0].key}')`
-    
-    const rows=await query(SQL,res)
-    if(rows.length!==0)return res.err('角色名称已存在！')
-    res.ok()
-}
+exports.isCharaterExist = async (req, res) => {
+    try {
+        const { id, name, key } = req.query;
+        const oldRow = await query('SELECT name, `key` FROM characters WHERE id = ?', [id], res);
+        if (oldRow.length === 0) return res.err('角色不存在！');
+        const sql = 'SELECT id FROM characters WHERE (`name` = ? AND `name` != ?) OR (`key` = ? AND `key` != ?)';
+        const rows = await query(sql, [name, oldRow[0].name, key, oldRow[0].key], res);
+        if (rows.length !== 0) return res.err('角色名称或键已存在！');
+        res.ok();
+    } catch (err) {
+        console.error('检查角色存在失败:', err);
+        res.err('检查角色存在失败: ' + err.message);
+    }
+};
 
 // 编辑角色
-exports.updateCharacter=(req,res)=>{
-    //base:基本信息对象,包括id;
-    //modules;新传进来的模块
-    //roles;新传进来的权限
-    const input=JSON.parse(req.body.data)
-    const id=input.base.id
-    db.beginTransaction(async (err)=>{
-        if (err) return res.err(err)
-        // 1.更新基本信息
-       await queryT(`update characters set ? where id=${id}`,input.base,res)
-        // 2.获取老模块
-        const oldModules=await queryT("select module_id from module_view where character_id=?",id,res)
-        const moduleids_str=oldModules.map(item=>item.module_id).join(",")//老的模块字符串
-        const moduleSpliter=splitAddAndDelete(moduleids_str,input.modules)//分离处理
-        const addModulesStr=moduleSpliter.addStr
-        const deleteModulesStr=moduleSpliter.deleteStr
-        // 3.获取老权限
-        const OldRoles=await queryT("select role_id from character_roles where character_id=?",id,res)
-        const roleids_str=OldRoles.map(item=>item.role_id).join(",")//老的权限字符串
-        const roleSpliter=splitAddAndDelete(roleids_str,input.roles)//分离处理
-        const addRolesStr=roleSpliter.addStr
-        const deleteRolesStr=roleSpliter.deleteStr
-        // 4.删除与增加模块
-        // if(deleteModulesStr!==''){
-        //     const DeleteModuleSQL=`delete from character_modules where module_id in(${deleteModulesStr}) and character_id=${id}`
-        //     await query(DeleteModuleSQL,res)
-        // }
-        // if(addModulesStr!==''){
-        //     const AddModulesSQL=OneToManyInsert('character_modules','character_id','module_id',id,addModulesStr)
-        //     await query(AddModulesSQL,res)
-        // }
-        // 5.删除与增加权限
-        if(deleteRolesStr!==''){
-            const DeleteRoleSQL=`delete from character_roles where role_id in(${deleteRolesStr}) and character_id=${id}`
-            await query(DeleteRoleSQL,res)
+exports.updateCharacter = (req, res) => {
+    const input = JSON.parse(req.body.data);
+    const { base, roles, modules } = input; // 包含 modules 以支持 character_modules
+    const id = base.id;
+
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
         }
-        if(addRolesStr!==''){
-            const addRoleSQL=OneToManyInsert('character_roles','character_id','role_id',id,addRolesStr)
-            await query(addRoleSQL,res)
-        }
-        db.commit((err)=>{
-            if (err)  return db.rollback(function() {throw err});
-            res.ok('修改成功')
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            queryT('SELECT * FROM characters WHERE id = ? FOR UPDATE', [id], res, connection)
+                .then((results) => {
+                    if (results.length === 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色不存在！');
+                        });
+                        return;
+                    }
+
+                    return queryT('UPDATE characters SET ? WHERE id = ?', [base, id], res, connection);
+                })
+                .then(() => {
+                    // 锁定角色模块记录（如果启用）
+                    if (modules && modules !== '') {
+                        return queryT('SELECT module_id FROM character_modules WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                    }
+                    return Promise.resolve([]);
+                })
+                .then((oldModules) => {
+                    if (modules && modules !== '') {
+                        const moduleIdsStr = oldModules.map(item => item.module_id).join(',');
+                        const moduleSpliter = splitAddAndDelete(moduleIdsStr, modules);
+                        const { addStr: addModulesStr, deleteStr: deleteModulesStr } = moduleSpliter;
+
+                        if (deleteModulesStr !== '') {
+                            return queryT('DELETE FROM character_modules WHERE character_id = ? AND module_id IN (?)', [id, deleteModulesStr.split(',')], res, connection);
+                        }
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    if (modules && modules !== '' && splitAddAndDelete(oldModules.map(item => item.module_id).join(','), modules).addStr !== '') {
+                        const addModulesStr = splitAddAndDelete(oldModules.map(item => item.module_id).join(','), modules).addStr;
+                        const addModuleSQL = OneToManyInsert('character_modules', 'character_id', 'module_id', id, addModulesStr);
+                        return queryT(addModuleSQL, null, res, connection);
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    // 锁定角色权限记录
+                    return queryT('SELECT role_id FROM character_roles WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                })
+                .then((oldRoles) => {
+                    const roleIdsStr = oldRoles.map(item => item.role_id).join(',');
+                    const roleSpliter = splitAddAndDelete(roleIdsStr, roles);
+                    const { addStr: addRolesStr, deleteStr: deleteRolesStr } = roleSpliter;
+
+                    if (deleteRolesStr !== '') {
+                        return queryT('DELETE FROM character_roles WHERE character_id = ? AND role_id IN (?)', [id, deleteRolesStr.split(',')], res, connection);
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    const roleSpliter = splitAddAndDelete(oldRoles.map(item => item.role_id).join(','), roles);
+                    if (roleSpliter.addStr !== '') {
+                        const addRoleSQL = OneToManyInsert('character_roles', 'character_id', 'role_id', id, roleSpliter.addStr);
+                        return queryT(addRoleSQL, null, res, connection);
+                    }
+                    return Promise.resolve();
+                })
+                .then(() => {
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                                res.err('事务提交失败: ' + err.message);
+                            });
+                            return;
+                        }
+                        connection.release();
+                        res.ok('修改成功');
+                    });
+                })
+                .catch((err) => {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('编辑角色失败:', err);
+                        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                            res.err('数据库锁等待超时，请稍后重试');
+                        } else {
+                            res.err('编辑角色失败: ' + err.message);
+                        }
+                    });
+                });
         });
-    })
-}
+    });
+};
 
-
-// 根据角色id获取模块id和权限id
-exports.getModuleidAndRoleidByid=async (req,res)=>{
-    const id=req.query.character_id
-    // 1.根据角色id获取模块
-    const getModuleidsSQL="select module_id from module_view where character_id=?"
-    const moduleArr=await query(getModuleidsSQL,id,res)
-    // 2.根据角色id获取权限
-    const getRoleidsSQL="select role_id from character_roles where character_id=?"
-    const roleArr=await query(getRoleidsSQL,id,res)
-    res.ok('ok',{
-        moduleArr:moduleArr.map(item=>item.module_id),
-        roleArr:roleArr.map(item=>item.role_id)
-    })
-}
+// 根据角色 ID 获取模块 ID 和权限 ID
+exports.getModuleidAndRoleidByid = async (req, res) => {
+    try {
+        const id = req.query.character_id;
+        const getModuleidsSQL = "SELECT module_id FROM module_view WHERE character_id = ?";
+        const moduleArr = await query(getModuleidsSQL, [id], res);
+        const getRoleidsSQL = "SELECT role_id FROM character_roles WHERE character_id = ?";
+        const roleArr = await query(getRoleidsSQL, [id], res);
+        res.ok('ok', {
+            moduleArr: moduleArr.map(item => item.module_id),
+            roleArr: roleArr.map(item => item.role_id)
+        });
+    } catch (err) {
+        console.error('获取模块和权限 ID 失败:', err);
+        res.err('获取模块和权限 ID 失败: ' + err.message);
+    }
+};
 
 // 删除角色
-exports.deleteCharacter=(req,res)=>{
-    const id=req.query.id
-    db.beginTransaction(async (err)=>{
-        // 1.从角色模块中间表删除
-        // const DeletefromTableWidthModuleSQL=`delete from character_modules where character_id=${id}`
-        // await query(DeletefromTableWidthModuleSQL,res)
-        // 2.从角色权限中间表删除
-        const DeletefromTableWidthRoleSQL=`delete from character_roles where character_id=${id}`
-        await query(DeletefromTableWidthRoleSQL,res)
+exports.deleteCharacter = (req, res) => {
+    const id = req.query.id;
 
-        // 3.移除属于该角色的用户
-        const GetUersRows=await queryT(`select id from user where character_id=${id}`,res)
-        if(GetUersRows.length!==0){
-           await queryT(`update user set character_id=6 where id in(${GetUersRows.map(item=>item.id).join(',')})`,res)
-        }        
-        // 4.从角色表删除角色
-        const DeletefromCharactersSQL=`delete from characters where id=${id}`
-        await query(DeletefromCharactersSQL,res)
-        db.commit((err)=>{
-            if (err)  return db.rollback(function() {throw err});
-            res.ok('删除成功')
+    db.getConnection((err, connection) => {
+        if (err) {
+            console.error('数据库连接失败:', err);
+            return res.err('数据库连接失败: ' + err.message);
+        }
+
+        connection.beginTransaction((err) => {
+            if (err) {
+                connection.release();
+                console.error('事务启动失败:', err);
+                return res.err('事务启动失败: ' + err.message);
+            }
+
+            queryT('SELECT * FROM characters WHERE id = ? FOR UPDATE', [id], res, connection)
+                .then((results) => {
+                    if (results.length === 0) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('角色不存在！');
+                        });
+                        return;
+                    }
+
+                    return queryT('SELECT * FROM character_modules WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                })
+                .then(() => {
+                    return queryT('DELETE FROM character_modules WHERE character_id = ?', [id], res, connection);
+                })
+                .then(() => {
+                    return queryT('SELECT * FROM character_roles WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                })
+                .then(() => {
+                    return queryT('DELETE FROM character_roles WHERE character_id = ?', [id], res, connection);
+                })
+                .then(() => {
+                    return queryT('SELECT id FROM user WHERE character_id = ? FOR UPDATE', [id], res, connection);
+                })
+                .then((userRows) => {
+                    if (userRows.length === 0) return Promise.resolve();
+
+                    const userIds = userRows.map(item => item.id);
+                    return queryT('UPDATE user SET character_id = 6 WHERE id IN (?)', [userIds], res, connection);
+                })
+                .then(() => {
+                    return queryT('DELETE FROM characters WHERE id = ?', [id], res, connection);
+                })
+                .then((result) => {
+                    if (result.affectedRows !== 1) {
+                        connection.rollback(() => {
+                            connection.release();
+                            res.err('删除角色失败');
+                        });
+                        return;
+                    }
+
+                    connection.commit((err) => {
+                        if (err) {
+                            connection.rollback(() => {
+                                connection.release();
+                                console.error('事务提交失败:', err);
+                                res.err('事务提交失败: ' + err.message);
+                            });
+                            return;
+                        }
+                        connection.release();
+                        res.ok('删除成功');
+                    });
+                })
+                .catch((err) => {
+                    connection.rollback(() => {
+                        connection.release();
+                        console.error('删除角色失败:', err);
+                        if (err.code === 'ER_LOCK_WAIT_TIMEOUT') {
+                            res.err('数据库锁等待超时，请稍后重试');
+                        } else {
+                            res.err('删除角色失败: ' + err.message);
+                        }
+                    });
+                });
         });
-    })
-}
+    });
+};
 
 // 权限列表：获取所有模块和权限
-exports.getAllModulesAndRoles=async (req,res)=>{
-    //1.获取模块列表
-    const getModuleSQL="select * from module"
-    const moduleRows=await query(getModuleSQL,res)
-    //2.获取权限列表
-    const getRoleSQL="select *from roles"
-    const roleRows=await query(getRoleSQL,res)
-    //3.插入对应权限
-    const moduleWithRoles=childrenInsertParent(moduleRows,'id',roleRows,'module_id','roles')
-    //4.生成树并返回
-    res.ok('ok',{
-        data:NodesToTree(moduleWithRoles,'id','parent_id',0)
-    })
-}
+exports.getAllModulesAndRoles = async (req, res) => {
+    try {
+        const getModuleSQL = "SELECT * FROM module";
+        const moduleRows = await query(getModuleSQL, res);
+        const getRoleSQL = "SELECT * FROM roles";
+        const roleRows = await query(getRoleSQL, res);
+        const moduleWithRoles = childrenInsertParent(moduleRows, 'id', roleRows, 'module_id', 'roles');
+        res.ok('ok', {
+            data: NodesToTree(moduleWithRoles, 'id', 'parent_id', 0)
+        });
+    } catch (err) {
+        console.error('获取模块和权限失败:', err);
+        res.err('获取模块和权限失败: ' + err.message);
+    }
+};
 
 // 权限列表：停用模块
-exports.stopModule=(req,res)=>{
-    // const SQL=`update module set state=0 where id=${req.query.id}`
-    // db.query(SQL,(err,data)=>{
-    //     if(err) return res.err(err)
-    //     res.ok('停用成功')
-    // })
-    res.ok('暂不支持')
-}
+exports.stopModule = (req, res) => {
+    res.ok('暂不支持');
+};
 
 // 权限列表：恢复模块
-exports.aliveModule=(req,res)=>{
-    // const SQL=`update module set state=1 where id=${req.query.id}`
-    // db.query(SQL,(err,data)=>{
-    //     if(err) return res.err(err)
-    //     res.ok('恢复成功')
-    // })
-    res.ok('暂不支持')
-}
+exports.aliveModule = (req, res) => {
+    res.ok('暂不支持');
+};
+

@@ -1,9 +1,13 @@
 const mysql=require('mysql2')
-const db = mysql.createConnection({
+const db = mysql.createPool({
     host: '127.0.0.1',
     user: 'root',
     password: 'Zrt040522',
     database: 'news_system',
+    connectionLimit: 10,
+    waitForConnections: true,
+    queueLimit: 0
+
   })
 // 可选：每隔一段时间 ping 一下数据库，保持连接活跃
 setInterval(() => {
