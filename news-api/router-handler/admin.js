@@ -38,7 +38,7 @@ exports.login=(req,res)=>{
 
 // 根据角色获取模块和权限
 exports.getModulesAndRolesById=(req,res)=>{
-    const getModuleSQL="SELECT parent_id,module_id, label,`key`,menu FROM module_view where character_id=? and state=1"
+    const getModuleSQL="SELECT parent_id,module_id, label,`key`,menu FROM module_view where character_id=?"
     const character_id=req.auth.character_id
     db.query(getModuleSQL,character_id,(err,results)=>{
         if(err)return res.ok(err)

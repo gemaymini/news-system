@@ -52,7 +52,7 @@ exports.aliveCharacter=async (req,res)=>{
 
 // 获取所有开启的模块
 exports.getAllOpenModules=async (req,res)=>{
-    const rows=await query('select `key`,`id` as module_id,`name`,parent_id from module where state=1',res)
+    const rows=await query('select `key`,`id` as module_id,`name`,parent_id from module',res)
     res.ok('ok',{
         data:NodesToTree(rows,'module_id','parent_id',0)
     })
@@ -128,7 +128,7 @@ exports.updateCharacter=(req,res)=>{
         // 1.更新基本信息
        await queryT(`update characters set ? where id=${id}`,input.base,res)
         // 2.获取老模块
-        const oldModules=await queryT("select module_id from character_modules where character_id=?",id,res)
+        const oldModules=await queryT("select module_id from module_view where character_id=?",id,res)
         const moduleids_str=oldModules.map(item=>item.module_id).join(",")//老的模块字符串
         const moduleSpliter=splitAddAndDelete(moduleids_str,input.modules)//分离处理
         const addModulesStr=moduleSpliter.addStr
@@ -165,12 +165,11 @@ exports.updateCharacter=(req,res)=>{
 }
 
 
-// character_modules_state_view：角色模块中间表，过滤出模块为开启状态的数据
 // 根据角色id获取模块id和权限id
 exports.getModuleidAndRoleidByid=async (req,res)=>{
     const id=req.query.character_id
     // 1.根据角色id获取模块
-    const getModuleidsSQL="select module_id from character_modules_state_view where character_id=?"
+    const getModuleidsSQL="select module_id from module_view where character_id=?"
     const moduleArr=await query(getModuleidsSQL,id,res)
     // 2.根据角色id获取权限
     const getRoleidsSQL="select role_id from character_roles where character_id=?"
@@ -225,18 +224,20 @@ exports.getAllModulesAndRoles=async (req,res)=>{
 
 // 权限列表：停用模块
 exports.stopModule=(req,res)=>{
-    const SQL=`update module set state=0 where id=${req.query.id}`
-    db.query(SQL,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('停用成功')
-    })
+    // const SQL=`update module set state=0 where id=${req.query.id}`
+    // db.query(SQL,(err,data)=>{
+    //     if(err) return res.err(err)
+    //     res.ok('停用成功')
+    // })
+    res.ok('暂不支持')
 }
 
 // 权限列表：恢复模块
 exports.aliveModule=(req,res)=>{
-    const SQL=`update module set state=1 where id=${req.query.id}`
-    db.query(SQL,(err,data)=>{
-        if(err) return res.err(err)
-        res.ok('恢复成功')
-    })
+    // const SQL=`update module set state=1 where id=${req.query.id}`
+    // db.query(SQL,(err,data)=>{
+    //     if(err) return res.err(err)
+    //     res.ok('恢复成功')
+    // })
+    res.ok('暂不支持')
 }
